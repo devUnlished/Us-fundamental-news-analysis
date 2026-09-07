@@ -1,4 +1,4 @@
-﻿// Content script injected onto TradingView, XM WebTrader, and FBS WebTrader pages
+// Content script injected onto TradingView, XM WebTrader, and FBS WebTrader pages
 (function() {
   console.log("[Fundamental News Sniper] Injected on chart page.");
 
@@ -27,11 +27,39 @@
       <div id="fn-sniper-signal" style="font-size: 16px; font-weight: 800; background: #334155; padding: 8px; border-radius: 4px; text-align: center; margin-bottom: 6px;">
         STANDBY FOR NEWS
       </div>
-      <div id="fn-sniper-desc" style="font-size: 11px; color: #94a3b8; line-height: 1.4;">
-        Monitoring US high impact data releases...
+      <div id="fn-sniper-desc" style="font-size: 11px; color: #94a3b8; line-height: 1.4; margin-bottom: 8px;">
+        Monitoring US high impact data releases (NFP, CPI, FOMC)...
+      </div>
+      <div style="display: flex; gap: 6px;">
+        <button id="fn-test-buy" style="flex: 1; background: #059669; color: white; border: none; border-radius: 4px; padding: 4px; font-size: 10px; font-weight: bold; cursor: pointer;">
+          Demo BUY (NFP Miss)
+        </button>
+        <button id="fn-test-sell" style="flex: 1; background: #dc2626; color: white; border: none; border-radius: 4px; padding: 4px; font-size: 10px; font-weight: bold; cursor: pointer;">
+          Demo SELL (NFP Beat)
+        </button>
       </div>
     `;
     document.body.appendChild(hudContainer);
+
+    document.getElementById("fn-test-buy").addEventListener("click", () => {
+      displaySignal({
+        signal: "BUY",
+        title: "Nonfarm Payrolls (NFP)",
+        actual: 135.0,
+        benchmark: 185.0,
+        explanation: "Actual (135k) missed forecast (185k) -> Weak USD -> BUY GOLD"
+      });
+    });
+
+    document.getElementById("fn-test-sell").addEventListener("click", () => {
+      displaySignal({
+        signal: "SELL",
+        title: "Nonfarm Payrolls (NFP)",
+        actual: 255.0,
+        benchmark: 185.0,
+        explanation: "Actual (255k) beat forecast (185k) -> Strong USD -> SELL GOLD"
+      });
+    });
   }
 
   function playAlertSound(isBuy) {
