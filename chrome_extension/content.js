@@ -1,7 +1,8 @@
 ﻿// Content script: High-detail institutional terminal HUD overlay for TradingView, XM & FBS
-// Features: Drag-to-move, bottom-right resizable corner, responsive flex/clamp sizing, audio alert engine
+// Clean production version: connected exclusively to real live calendar data feed.
+// Features: Drag-to-move, resizable, responsive metrics matrix, audio engine.
 (function() {
-  console.log("[News Sniper Terminal] Loaded.");
+  console.log("[News Sniper Terminal] Connected to Live Institutional Economic Feed.");
 
   let hud = document.getElementById("fn-sniper-hud");
   if (!hud) {
@@ -12,10 +13,9 @@
       top: 24px;
       right: 24px;
       z-index: 2147483647;
-      width: 360px;
+      width: 350px;
       min-width: 250px;
       max-width: 600px;
-      min-height: 180px;
       background: #0b0e14;
       border: 1px solid #1e293b;
       border-radius: 8px;
@@ -46,15 +46,15 @@
       <!-- Scrollable / Responsive Content Body -->
       <div style="padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; flex: 1; overflow-y: auto;">
         <!-- Main Action Banner -->
-        <div id="fn-badge" style="background: #1e293b; border-radius: 6px; padding: 10px 12px; text-align: center; border: 1px solid rgba(255,255,255,0.06); transition: all 0.25s ease;">
+        <div id="fn-badge" style="background: #1e293b; border-radius: 6px; padding: 12px 14px; text-align: center; border: 1px solid rgba(255,255,255,0.06); transition: all 0.25s ease;">
           <div id="fn-conviction-tag" style="font-size: clamp(8px, 2.2vw, 10px); font-weight: 700; letter-spacing: 1px; color: #94a3b8; margin-bottom: 2px;">STANDBY MODE</div>
-          <div id="fn-action-text" style="font-size: clamp(14px, 4.5vw, 22px); font-weight: 900; letter-spacing: 0.5px; color: #f1f5f9; line-height: 1.2;">MONITORING FEED</div>
-          <div id="fn-volatility-tag" style="font-size: clamp(8px, 2.2vw, 10px); color: #64748b; margin-top: 2px;">Expected Move: Normal Range</div>
+          <div id="fn-action-text" style="font-size: clamp(14px, 4.5vw, 22px); font-weight: 900; letter-spacing: 0.5px; color: #f1f5f9; line-height: 1.2;">LIVE FEED READY</div>
+          <div id="fn-volatility-tag" style="font-size: clamp(8px, 2.2vw, 10px); color: #64748b; margin-top: 3px;">Awaiting Release Time...</div>
         </div>
 
         <!-- Metrics Matrix -->
         <div>
-          <div id="fn-event-title" style="font-size: clamp(9px, 2.5vw, 11px); font-weight: 600; color: #38bdf8; margin-bottom: 6px;">Awaiting US Macro Release...</div>
+          <div id="fn-event-title" style="font-size: clamp(9px, 2.5vw, 11px); font-weight: 600; color: #38bdf8; margin-bottom: 6px;">Connected to US High-Impact Calendar</div>
           <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: #0f141d; padding: 8px; border-radius: 6px; border: 1px solid #1e293b;">
             <div>
               <div style="font-size: 8px; color: #64748b; font-weight: 600; text-transform: uppercase;">Actual</div>
@@ -71,23 +71,10 @@
           </div>
         </div>
 
-        <!-- Live Demo Trigger Controls -->
-        <div style="border-top: 1px solid #18202f; padding-top: 6px; display: flex; flex-direction: column; gap: 4px;">
-          <div style="font-size: 8px; font-weight: 700; color: #64748b; letter-spacing: 0.5px;">CONVICTION LEVEL DEMO:</div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
-            <button id="fn-demo-buy-hard" style="background: #065f46; border: 1px solid #047857; color: #ecfdf5; border-radius: 4px; padding: 5px 3px; font-size: clamp(8px, 2.2vw, 10px); font-weight: 700; cursor: pointer;">
-              🟢 BUY VERY HARD
-            </button>
-            <button id="fn-demo-sell-hard" style="background: #991b1b; border: 1px solid #b91c1c; color: #fef2f2; border-radius: 4px; padding: 5px 3px; font-size: clamp(8px, 2.2vw, 10px); font-weight: 700; cursor: pointer;">
-              🔴 SELL VERY HARD
-            </button>
-            <button id="fn-demo-buy-mod" style="background: #064e3b; border: 1px solid #065f46; color: #a7f3d0; border-radius: 4px; padding: 4px; font-size: clamp(7px, 2vw, 9px); font-weight: 600; cursor: pointer;">
-              Buy Moderate
-            </button>
-            <button id="fn-demo-sell-mod" style="background: #7f1d1d; border: 1px solid #991b1b; color: #fecaca; border-radius: 4px; padding: 4px; font-size: clamp(7px, 2vw, 9px); font-weight: 600; cursor: pointer;">
-              Sell Moderate
-            </button>
-          </div>
+        <!-- Live Status Footer -->
+        <div style="border-top: 1px solid #18202f; padding-top: 6px; display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 9px; color: #64748b; font-weight: 500;">Feed: TradingView Macro JSON</span>
+          <span id="fn-status-indicator" style="font-size: 9px; color: #22c55e; font-weight: 600;">● Active 1s Polling</span>
         </div>
       </div>
     `;
@@ -108,7 +95,6 @@
       initialLeft = rect.left;
       initialTop = rect.top;
 
-      // Switch from right-anchored to left/top anchored on first drag
       hud.style.right = "auto";
       hud.style.left = initialLeft + "px";
       hud.style.top = initialTop + "px";
@@ -155,7 +141,7 @@
       } catch(e) {}
     }
 
-    // Render Event & Conviction
+    // Render Event & Conviction from Live Background Message
     window.renderSniperSignal = function(data) {
       const badge = document.getElementById("fn-badge");
       const conviction = document.getElementById("fn-conviction-tag");
@@ -168,7 +154,7 @@
 
       badge.style.backgroundColor = data.badgeColor || "#1e293b";
       badge.style.border = "1px solid rgba(255, 255, 255, 0.25)";
-      badge.style.boxShadow = `0 0 20px ${data.badgeColor}88`;
+      badge.style.boxShadow = `0 0 24px ${data.badgeColor}99`;
 
       conviction.innerText = data.conviction || "SIGNAL DETECTED";
       conviction.style.color = "#ffffff";
@@ -188,67 +174,6 @@
       playAudio(isBuy, isVeryHard);
     };
 
-    // Wire Demo Buttons
-    document.getElementById("fn-demo-buy-hard").onclick = () => {
-      window.renderSniperSignal({
-        signal: "BUY VERY HARD",
-        conviction: "EXTREME SURPRISE (DELTA: -95k)",
-        expectedPips: "220 - 350+ pips",
-        badgeColor: "#065f46",
-        title: "US Nonfarm Payrolls (NFP)",
-        actual: 90.0,
-        forecast: 185.0,
-        diff: "-95.00",
-        unit: "k",
-        time: "14:30:01"
-      });
-    };
-
-    document.getElementById("fn-demo-sell-hard").onclick = () => {
-      window.renderSniperSignal({
-        signal: "SELL VERY HARD",
-        conviction: "EXTREME SURPRISE (DELTA: +110k)",
-        expectedPips: "220 - 350+ pips",
-        badgeColor: "#991b1b",
-        title: "US Nonfarm Payrolls (NFP)",
-        actual: 295.0,
-        forecast: 185.0,
-        diff: "+110.00",
-        unit: "k",
-        time: "14:30:01"
-      });
-    };
-
-    document.getElementById("fn-demo-buy-mod").onclick = () => {
-      window.renderSniperSignal({
-        signal: "BUY MODERATE",
-        conviction: "MODERATE SURPRISE (DELTA: -20k)",
-        expectedPips: "40 - 75 pips",
-        badgeColor: "#059669",
-        title: "US Nonfarm Payrolls (NFP)",
-        actual: 165.0,
-        forecast: 185.0,
-        diff: "-20.00",
-        unit: "k",
-        time: "14:30:01"
-      });
-    };
-
-    document.getElementById("fn-demo-sell-mod").onclick = () => {
-      window.renderSniperSignal({
-        signal: "SELL MODERATE",
-        conviction: "MODERATE SURPRISE (DELTA: +25k)",
-        expectedPips: "40 - 75 pips",
-        badgeColor: "#b91c1c",
-        title: "US Nonfarm Payrolls (NFP)",
-        actual: 210.0,
-        forecast: 185.0,
-        diff: "+25.00",
-        unit: "k",
-        time: "14:30:01"
-      });
-    };
-
     // Live Message Listener from background worker
     chrome.runtime.onMessage.addListener((msg) => {
       if (msg.type === "NEWS_SIGNAL") {
@@ -256,7 +181,7 @@
       }
     });
 
-    // Clock
+    // Clock (GMT+2)
     setInterval(() => {
       const now = new Date();
       const gmt2 = new Date(now.getTime() + (2 * 60 + now.getTimezoneOffset()) * 60000);
