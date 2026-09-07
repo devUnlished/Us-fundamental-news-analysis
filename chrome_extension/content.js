@@ -1,6 +1,5 @@
 ﻿// Content script: High-detail institutional terminal HUD overlay for TradingView, XM & FBS
-// Clean production version: connected exclusively to real live calendar data feed.
-// Features: Drag-to-move, resizable, responsive metrics matrix, audio engine.
+// Clean production version: Displays Upcoming Forecast/Prior before news, and Actual/Delta upon release.
 (function() {
   console.log("[News Sniper Terminal] Connected to Live Institutional Economic Feed.");
 
@@ -13,8 +12,8 @@
       top: 24px;
       right: 24px;
       z-index: 2147483647;
-      width: 350px;
-      min-width: 250px;
+      width: 360px;
+      min-width: 260px;
       max-width: 600px;
       background: #0b0e14;
       border: 1px solid #1e293b;
@@ -47,34 +46,34 @@
       <div style="padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; flex: 1; overflow-y: auto;">
         <!-- Main Action Banner -->
         <div id="fn-badge" style="background: #1e293b; border-radius: 6px; padding: 12px 14px; text-align: center; border: 1px solid rgba(255,255,255,0.06); transition: all 0.25s ease;">
-          <div id="fn-conviction-tag" style="font-size: clamp(8px, 2.2vw, 10px); font-weight: 700; letter-spacing: 1px; color: #94a3b8; margin-bottom: 2px;">STANDBY MODE</div>
-          <div id="fn-action-text" style="font-size: clamp(14px, 4.5vw, 22px); font-weight: 900; letter-spacing: 0.5px; color: #f1f5f9; line-height: 1.2;">LIVE FEED READY</div>
-          <div id="fn-volatility-tag" style="font-size: clamp(8px, 2.2vw, 10px); color: #64748b; margin-top: 3px;">Awaiting Release Time...</div>
+          <div id="fn-conviction-tag" style="font-size: clamp(8px, 2.2vw, 10px); font-weight: 700; letter-spacing: 1px; color: #38bdf8; margin-bottom: 2px;">COUNTDOWN ACTIVE</div>
+          <div id="fn-action-text" style="font-size: clamp(14px, 4.5vw, 20px); font-weight: 900; letter-spacing: 0.5px; color: #f1f5f9; line-height: 1.2;">UPCOMING EVENT LOADED</div>
+          <div id="fn-volatility-tag" style="font-size: clamp(8px, 2.2vw, 10px); color: #94a3b8; margin-top: 3px;">Tracking pre-release forecast & prior</div>
         </div>
 
         <!-- Metrics Matrix -->
         <div>
-          <div id="fn-event-title" style="font-size: clamp(9px, 2.5vw, 11px); font-weight: 600; color: #38bdf8; margin-bottom: 6px;">Connected to US High-Impact Calendar</div>
+          <div id="fn-event-title" style="font-size: clamp(9px, 2.5vw, 11px); font-weight: 600; color: #38bdf8; margin-bottom: 6px;">Querying upcoming US macro event...</div>
           <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: #0f141d; padding: 8px; border-radius: 6px; border: 1px solid #1e293b;">
             <div>
-              <div style="font-size: 8px; color: #64748b; font-weight: 600; text-transform: uppercase;">Actual</div>
+              <div id="fn-col1-label" style="font-size: 8px; color: #64748b; font-weight: 600; text-transform: uppercase;">Prior</div>
               <div id="fn-actual-val" style="font-size: clamp(10px, 3vw, 14px); font-weight: 700; color: #f8fafc; font-family: monospace;">--</div>
             </div>
             <div>
-              <div style="font-size: 8px; color: #64748b; font-weight: 600; text-transform: uppercase;">Forecast</div>
-              <div id="fn-est-val" style="font-size: clamp(10px, 3vw, 14px); font-weight: 700; color: #94a3b8; font-family: monospace;">--</div>
+              <div id="fn-col2-label" style="font-size: 8px; color: #64748b; font-weight: 600; text-transform: uppercase;">Forecast</div>
+              <div id="fn-est-val" style="font-size: clamp(10px, 3vw, 14px); font-weight: 700; color: #38bdf8; font-family: monospace;">--</div>
             </div>
             <div>
-              <div style="font-size: 8px; color: #64748b; font-weight: 600; text-transform: uppercase;">Surprise Delta</div>
-              <div id="fn-diff-val" style="font-size: clamp(10px, 3vw, 14px); font-weight: 800; color: #64748b; font-family: monospace;">--</div>
+              <div id="fn-col3-label" style="font-size: 8px; color: #64748b; font-weight: 600; text-transform: uppercase;">Surprise Delta</div>
+              <div id="fn-diff-val" style="font-size: clamp(10px, 3vw, 14px); font-weight: 800; color: #64748b; font-family: monospace;">PENDING</div>
             </div>
           </div>
         </div>
 
         <!-- Live Status Footer -->
         <div style="border-top: 1px solid #18202f; padding-top: 6px; display: flex; justify-content: space-between; align-items: center;">
-          <span style="font-size: 9px; color: #64748b; font-weight: 500;">Feed: TradingView Macro JSON</span>
-          <span id="fn-status-indicator" style="font-size: 9px; color: #22c55e; font-weight: 600;">● Active 1s Polling</span>
+          <span style="font-size: 9px; color: #64748b; font-weight: 500;">Feed: Institutional Live Stream</span>
+          <span id="fn-status-indicator" style="font-size: 9px; color: #22c55e; font-weight: 600;">● Active Sync</span>
         </div>
       </div>
     `;
@@ -141,13 +140,49 @@
       } catch(e) {}
     }
 
-    // Render Event & Conviction from Live Background Message
+    // Display Upcoming Pre-Release Data (Forecast & Prior)
+    function renderUpcoming(ev) {
+      const conviction = document.getElementById("fn-conviction-tag");
+      const action = document.getElementById("fn-action-text");
+      const volTag = document.getElementById("fn-volatility-tag");
+      const title = document.getElementById("fn-event-title");
+      const col1Label = document.getElementById("fn-col1-label");
+      const col2Label = document.getElementById("fn-col2-label");
+      const col3Label = document.getElementById("fn-col3-label");
+      const actualVal = document.getElementById("fn-actual-val");
+      const estVal = document.getElementById("fn-est-val");
+      const diffVal = document.getElementById("fn-diff-val");
+
+      const evDate = new Date(ev.date);
+      // Convert to GMT+2
+      const gmt2Date = new Date(evDate.getTime() + (2 * 60 + evDate.getTimezoneOffset()) * 60000);
+      const timeStr = gmt2Date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + " GMT+2";
+
+      conviction.innerText = "UPCOMING RELEASE";
+      conviction.style.color = "#38bdf8";
+      action.innerText = ev.title;
+      volTag.innerText = `Releasing at ${timeStr} • Standby for Actual`;
+
+      title.innerText = `Scheduled: ${ev.title} (${timeStr})`;
+      col1Label.innerText = "Prior";
+      actualVal.innerText = `${ev.previous}${ev.unit || ''}`;
+      col2Label.innerText = "Forecast";
+      estVal.innerText = `${ev.forecast}${ev.unit || ''}`;
+      col3Label.innerText = "Actual";
+      diffVal.innerText = "AWAITING";
+      diffVal.style.color = "#94a3b8";
+    }
+
+    // Render Triggered Signal When Actual Drops
     window.renderSniperSignal = function(data) {
       const badge = document.getElementById("fn-badge");
       const conviction = document.getElementById("fn-conviction-tag");
       const action = document.getElementById("fn-action-text");
       const volTag = document.getElementById("fn-volatility-tag");
       const title = document.getElementById("fn-event-title");
+      const col1Label = document.getElementById("fn-col1-label");
+      const col2Label = document.getElementById("fn-col2-label");
+      const col3Label = document.getElementById("fn-col3-label");
       const actualVal = document.getElementById("fn-actual-val");
       const estVal = document.getElementById("fn-est-val");
       const diffVal = document.getElementById("fn-diff-val");
@@ -164,8 +199,11 @@
       volTag.style.color = "#ffffff";
 
       title.innerText = `${data.title} (${data.time || 'NOW'})`;
+      col1Label.innerText = "Actual";
       actualVal.innerText = `${data.actual}${data.unit || ''}`;
+      col2Label.innerText = "Forecast";
       estVal.innerText = `${data.forecast}${data.unit || ''}`;
+      col3Label.innerText = "Surprise Delta";
       diffVal.innerText = `${data.diff}${data.unit || ''}`;
       diffVal.style.color = data.signal.includes("BUY") ? "#4ade80" : "#f87171";
 
@@ -177,7 +215,16 @@
     // Live Message Listener from background worker
     chrome.runtime.onMessage.addListener((msg) => {
       if (msg.type === "NEWS_SIGNAL") {
-        window.renderSniperSignal(msg.data);
+        window.renderSniperSignal(msg);
+      } else if (msg.type === "UPCOMING_EVENT") {
+        renderUpcoming(msg.data);
+      }
+    });
+
+    // Request upcoming event state on initialization
+    chrome.runtime.sendMessage({ type: "GET_UPCOMING_EVENT" }, (resp) => {
+      if (resp && resp.upcoming) {
+        renderUpcoming(resp.upcoming);
       }
     });
 

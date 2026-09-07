@@ -1,4 +1,5 @@
-﻿// Background Service Worker: polls calendar API, calculates deviation magnitude and multi-tier conviction
+﻿// Background Service Worker: polls calendar API, tracks upcoming releases (Forecast/Prior)
+// and evaluates deviation magnitude the instant the Actual number drops.
 const SEEN_EVENTS_KEY = "seen_news_event_ids";
 
 const INDICATOR_RULES = {
@@ -25,10 +26,13 @@ const INDICATOR_RULES = {
   "ism services": { dir: 1, name: "ISM Services PMI", tier: 2, unit: "pts", stdDev: 1.2 },
   "ppi": { dir: 1, name: "Producer Price Index (PPI)", tier: 2, unit: "%", stdDev: 0.2 },
   "jolts": { dir: 1, name: "JOLTs Job Openings", tier: 2, unit: "M", stdDev: 0.25 },
+  "adp employment": { dir: 1, name: "ADP Employment Change", tier: 2, unit: "k", stdDev: 30.0 },
 
   // Tier 3: Medium-High Volatility
   "initial jobless claims": { dir: -1, name: "Initial Jobless Claims", tier: 3, unit: "k", stdDev: 12.0 },
-  "consumer sentiment": { dir: 1, name: "UoM Consumer Sentiment", tier: 3, unit: "pts", stdDev: 2.0 }
+  "consumer sentiment": { dir: 1, name: "UoM Consumer Sentiment", tier: 3, unit: "pts", stdDev: 2.0 },
+  "inflation expectations": { dir: 1, name: "Consumer Inflation Expectations", tier: 3, unit: "%", stdDev: 0.2 },
+  "business optimism": { dir: 1, name: "NFIB Business Optimism", tier: 3, unit: "pts", stdDev: 1.5 }
 };
 
 function matchRule(title) {
@@ -50,51 +54,52 @@ function computeStrength(diff, impactDir, rule) {
   let badgeColor = "#64748b";
 
   if (usdScore > 0) {
-    // Strong USD -> Sell Gold
     if (ratio >= 2.0) {
       signalAction = "SELL VERY HARD";
       convictionLevel = "EXTREME SURPRISE";
       expectedPips = "180 - 350+ pips";
-      badgeColor = "#991b1b"; // Deep dark red
+      badgeColor = "#991b1b";
     } else if (ratio >= 1.0) {
       signalAction = "SELL HARD";
       convictionLevel = "HIGH CONVICTION";
       expectedPips = "90 - 180 pips";
-      badgeColor = "#dc2626"; // Strong red
+      badgeColor = "#dc2626";
     } else {
       signalAction = "SELL MODERATE";
       convictionLevel = "MODERATE MOVE";
       expectedPips = "40 - 80 pips";
-      badgeColor = "#f87171"; // Light red
+      badgeColor = "#f87171";
     }
   } else if (usdScore < 0) {
-    // Weak USD -> Buy Gold
     if (ratio >= 2.0) {
       signalAction = "BUY VERY HARD";
       convictionLevel = "EXTREME SURPRISE";
       expectedPips = "180 - 350+ pips";
-      badgeColor = "#065f46"; // Deep emerald
+      badgeColor = "#065f46";
     } else if (ratio >= 1.0) {
       signalAction = "BUY HARD";
       convictionLevel = "HIGH CONVICTION";
       expectedPips = "90 - 180 pips";
-      badgeColor = "#059669"; // Bright green
+      badgeColor = "#059669";
     } else {
       signalAction = "BUY MODERATE";
       convictionLevel = "MODERATE MOVE";
       expectedPips = "40 - 80 pips";
-      badgeColor = "#34d399"; // Light green
+      badgeColor = "#34d399";
     }
   }
 
   return { signalAction, convictionLevel, expectedPips, badgeColor, ratio };
 }
 
+let latestUpcomingEvent = null;
+
 async function fetchAndEvaluate() {
   try {
     const now = new Date();
+    // Query window: from 2 hours ago to 7 days ahead
     const fromDate = new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString();
-    const toDate = new Date(now.getTime() + 4 * 60 * 60 * 1000).toISOString();
+    const toDate = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
     const url = `https://economic-calendar.tradingview.com/events?from=${fromDate}&to=${toDate}&countries=US`;
     const resp = await fetch(url, { headers: { "Origin": "https://www.tradingview.com" } });
@@ -106,37 +111,72 @@ async function fetchAndEvaluate() {
     const storage = await chrome.storage.local.get([SEEN_EVENTS_KEY]);
     const seen = new Set(storage[SEEN_EVENTS_KEY] || []);
 
+    let closestUpcoming = null;
+    let closestTimeDiff = Infinity;
+
     for (const ev of events) {
-      if (ev.actual !== null && ev.actual !== undefined && !seen.has(ev.id)) {
+      const rule = matchRule(ev.title || "");
+      if (!rule) continue;
+
+      const evTime = new Date(ev.date).getTime();
+      const hasActual = ev.actual !== null && ev.actual !== undefined;
+
+      // 1. Check for newly released Actual data
+      if (hasActual && !seen.has(ev.id)) {
         seen.add(ev.id);
-        const rule = matchRule(ev.title || "");
-        if (rule) {
-          const actual = parseFloat(ev.actual);
-          const benchmark = ev.forecast !== null ? parseFloat(ev.forecast) : parseFloat(ev.previous);
-          const previous = ev.previous !== null && ev.previous !== undefined ? parseFloat(ev.previous) : null;
+        const actual = parseFloat(ev.actual);
+        const benchmark = ev.forecast !== null && ev.forecast !== undefined ? parseFloat(ev.forecast) : parseFloat(ev.previous);
+        const previous = ev.previous !== null && ev.previous !== undefined ? parseFloat(ev.previous) : null;
 
-          if (!isNaN(actual) && !isNaN(benchmark)) {
-            const diff = actual - benchmark;
-            const strength = computeStrength(diff, rule.dir, rule);
+        if (!isNaN(actual) && !isNaN(benchmark)) {
+          const diff = actual - benchmark;
+          const strength = computeStrength(diff, rule.dir, rule);
 
-            broadcastSignal({
-              signal: strength.signalAction,
-              conviction: strength.convictionLevel,
-              expectedPips: strength.expectedPips,
-              badgeColor: strength.badgeColor,
-              ratio: strength.ratio.toFixed(1),
-              title: rule.name,
-              unit: rule.unit,
-              tier: rule.tier,
-              actual,
-              forecast: benchmark,
-              previous,
-              diff: (diff > 0 ? "+" : "") + diff.toFixed(2),
-              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-            });
-          }
+          broadcastSignal({
+            type: "NEWS_SIGNAL",
+            signal: strength.signalAction,
+            conviction: strength.convictionLevel,
+            expectedPips: strength.expectedPips,
+            badgeColor: strength.badgeColor,
+            ratio: strength.ratio.toFixed(1),
+            title: rule.name,
+            unit: rule.unit,
+            tier: rule.tier,
+            actual,
+            forecast: benchmark,
+            previous,
+            diff: (diff > 0 ? "+" : "") + diff.toFixed(2),
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+          });
         }
       }
+
+      // 2. Track upcoming events where actual is not yet released
+      if (!hasActual && evTime >= now.getTime()) {
+        const diffToNow = evTime - now.getTime();
+        if (diffToNow < closestTimeDiff) {
+          closestTimeDiff = diffToNow;
+          closestUpcoming = {
+            id: ev.id,
+            title: rule.name,
+            date: ev.date,
+            forecast: ev.forecast !== null && ev.forecast !== undefined ? ev.forecast : "N/A",
+            previous: ev.previous !== null && ev.previous !== undefined ? ev.previous : "N/A",
+            unit: rule.unit,
+            tier: rule.tier,
+            timeDiffMs: diffToNow
+          };
+        }
+      }
+    }
+
+    // Broadcast upcoming event details so HUD immediately shows forecast & prior before release
+    if (closestUpcoming) {
+      latestUpcomingEvent = closestUpcoming;
+      broadcastSignal({
+        type: "UPCOMING_EVENT",
+        data: closestUpcoming
+      });
     }
 
     await chrome.storage.local.set({ [SEEN_EVENTS_KEY]: Array.from(seen) });
@@ -149,11 +189,19 @@ function broadcastSignal(payload) {
   chrome.tabs.query({}, (tabs) => {
     for (const tab of tabs) {
       if (tab.id) {
-        chrome.tabs.sendMessage(tab.id, { type: "NEWS_SIGNAL", data: payload }).catch(() => {});
+        chrome.tabs.sendMessage(tab.id, payload).catch(() => {});
       }
     }
   });
 }
 
-setInterval(fetchAndEvaluate, 1000);
+// Check every 2 seconds
+setInterval(fetchAndEvaluate, 2000);
 fetchAndEvaluate();
+
+// When a tab opens or requests initial state, send latest upcoming event
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === "GET_UPCOMING_EVENT") {
+    sendResponse({ upcoming: latestUpcomingEvent });
+  }
+});
