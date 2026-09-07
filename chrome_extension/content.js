@@ -1,6 +1,7 @@
 ﻿// Content script: High-detail institutional terminal HUD overlay for TradingView, XM & FBS
 // Ordered cleanly: ACTUAL, FORECAST, PRIOR
 // Time display: 24-hour format with AM/PM (e.g., 14:30 PM GMT+2)
+// Scrollbars strictly removed (overflow hidden, seamless responsive scaling)
 (function() {
   console.log("[News Sniper Terminal] Connected to Live Institutional Economic Feed.");
 
@@ -30,17 +31,17 @@
       top: 24px;
       right: 24px;
       z-index: 2147483647;
-      width: 370px;
-      min-width: 270px;
-      max-width: 620px;
+      width: 360px;
+      min-width: 260px;
+      max-width: 600px;
       background: #0b0e14;
       border: 1px solid #1e293b;
       border-radius: 8px;
-      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05);
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.05);
       color: #e2e8f0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
       resize: both;
-      overflow: hidden;
+      overflow: hidden !important;
       user-select: none;
       display: flex;
       flex-direction: column;
@@ -49,7 +50,7 @@
 
     hud.innerHTML = `
       <!-- Draggable Header -->
-      <div id="fn-drag-handle" style="background: #141a24; padding: 8px 12px; border-bottom: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center; cursor: move;">
+      <div id="fn-drag-handle" style="background: #141a24; padding: 7px 12px; border-bottom: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center; cursor: move; flex-shrink: 0;">
         <div style="display: flex; align-items: center; gap: 6px;">
           <span style="width: 8px; height: 8px; border-radius: 50%; background: #22c55e; display: inline-block; box-shadow: 0 0 8px #22c55e;"></span>
           <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.8px; color: #f8fafc;">XAUUSD NEWS TERMINAL</span>
@@ -60,46 +61,46 @@
         </div>
       </div>
 
-      <!-- Scrollable / Responsive Content Body -->
-      <div style="padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; flex: 1; overflow-y: auto;">
+      <!-- Main Body: No scrollbars allowed -->
+      <div style="padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; flex: 1; overflow: hidden !important; box-sizing: border-box;">
         <!-- Main Action Banner -->
-        <div id="fn-badge" style="background: #1e293b; border-radius: 6px; padding: 12px 14px; text-align: center; border: 1px solid rgba(255,255,255,0.06); transition: all 0.25s ease;">
-          <div id="fn-conviction-tag" style="font-size: clamp(8px, 2.2vw, 10px); font-weight: 700; letter-spacing: 1px; color: #38bdf8; margin-bottom: 2px;">COUNTDOWN ACTIVE</div>
-          <div id="fn-action-text" style="font-size: clamp(14px, 4.5vw, 20px); font-weight: 900; letter-spacing: 0.5px; color: #f1f5f9; line-height: 1.2;">UPCOMING EVENT LOADED</div>
-          <div id="fn-volatility-tag" style="font-size: clamp(8px, 2.2vw, 10px); color: #94a3b8; margin-top: 3px;">Tracking pre-release forecast & prior</div>
+        <div id="fn-badge" style="background: #1e293b; border-radius: 6px; padding: 10px 12px; text-align: center; border: 1px solid rgba(255,255,255,0.06); transition: all 0.25s ease; flex-shrink: 0;">
+          <div id="fn-conviction-tag" style="font-size: clamp(8px, 2vw, 10px); font-weight: 700; letter-spacing: 1px; color: #38bdf8; margin-bottom: 2px;">COUNTDOWN ACTIVE</div>
+          <div id="fn-action-text" style="font-size: clamp(13px, 4vw, 18px); font-weight: 900; letter-spacing: 0.5px; color: #f1f5f9; line-height: 1.2;">UPCOMING EVENT LOADED</div>
+          <div id="fn-volatility-tag" style="font-size: clamp(8px, 1.8vw, 9.5px); color: #94a3b8; margin-top: 2px;">Tracking pre-release forecast & prior</div>
         </div>
 
-        <!-- Metrics Matrix: STRICT ORDER: ACTUAL | FORECAST | PRIOR -->
-        <div>
-          <div id="fn-event-title" style="font-size: clamp(9px, 2.5vw, 11px); font-weight: 600; color: #38bdf8; margin-bottom: 6px;">Querying upcoming US macro event...</div>
-          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: #0f141d; padding: 8px; border-radius: 6px; border: 1px solid #1e293b;">
+        <!-- Metrics Matrix: ACTUAL | FORECAST | PRIOR -->
+        <div style="flex-shrink: 0;">
+          <div id="fn-event-title" style="font-size: clamp(8.5px, 2.2vw, 10.5px); font-weight: 600; color: #38bdf8; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Querying upcoming US macro event...</div>
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; background: #0f141d; padding: 6px 8px; border-radius: 6px; border: 1px solid #1e293b;">
             <!-- Column 1: ACTUAL -->
             <div>
               <div style="font-size: 8px; color: #64748b; font-weight: 700; text-transform: uppercase;">Actual</div>
-              <div id="fn-actual-val" style="font-size: clamp(10px, 3vw, 14px); font-weight: 800; color: #94a3b8; font-family: monospace;">AWAITING</div>
+              <div id="fn-actual-val" style="font-size: clamp(10px, 2.8vw, 13px); font-weight: 800; color: #94a3b8; font-family: monospace;">AWAITING</div>
             </div>
             <!-- Column 2: FORECAST -->
             <div>
               <div style="font-size: 8px; color: #64748b; font-weight: 700; text-transform: uppercase;">Forecast</div>
-              <div id="fn-est-val" style="font-size: clamp(10px, 3vw, 14px); font-weight: 800; color: #38bdf8; font-family: monospace;">--</div>
+              <div id="fn-est-val" style="font-size: clamp(10px, 2.8vw, 13px); font-weight: 800; color: #38bdf8; font-family: monospace;">--</div>
             </div>
             <!-- Column 3: PRIOR -->
             <div>
               <div style="font-size: 8px; color: #64748b; font-weight: 700; text-transform: uppercase;">Prior</div>
-              <div id="fn-prior-val" style="font-size: clamp(10px, 3vw, 14px); font-weight: 800; color: #f8fafc; font-family: monospace;">--</div>
+              <div id="fn-prior-val" style="font-size: clamp(10px, 2.8vw, 13px); font-weight: 800; color: #f8fafc; font-family: monospace;">--</div>
             </div>
           </div>
-          <!-- Surprise Delta Strip (below the 3 metrics) -->
-          <div id="fn-delta-strip" style="margin-top: 6px; background: #0f141d; padding: 6px 8px; border-radius: 4px; border: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 9px; color: #64748b; font-weight: 600; text-transform: uppercase;">Surprise Delta:</span>
-            <span id="fn-diff-val" style="font-size: 11px; font-weight: 800; color: #94a3b8; font-family: monospace;">PENDING RELEASE</span>
+          <!-- Surprise Delta Strip -->
+          <div id="fn-delta-strip" style="margin-top: 5px; background: #0f141d; padding: 5px 8px; border-radius: 4px; border: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 8.5px; color: #64748b; font-weight: 600; text-transform: uppercase;">Surprise Delta:</span>
+            <span id="fn-diff-val" style="font-size: 10.5px; font-weight: 800; color: #94a3b8; font-family: monospace;">PENDING RELEASE</span>
           </div>
         </div>
 
         <!-- Live Status Footer -->
-        <div style="border-top: 1px solid #18202f; padding-top: 6px; display: flex; justify-content: space-between; align-items: center;">
-          <span style="font-size: 9px; color: #64748b; font-weight: 500;">Feed: Institutional Live Stream</span>
-          <span id="fn-status-indicator" style="font-size: 9px; color: #22c55e; font-weight: 600;">● Active Sync</span>
+        <div style="border-top: 1px solid #18202f; padding-top: 5px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
+          <span style="font-size: 8.5px; color: #64748b; font-weight: 500;">Feed: Institutional Stream</span>
+          <span id="fn-status-indicator" style="font-size: 8.5px; color: #22c55e; font-weight: 600;">● Active Sync</span>
         </div>
       </div>
     `;
