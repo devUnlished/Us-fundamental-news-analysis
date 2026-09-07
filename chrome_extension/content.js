@@ -1,7 +1,25 @@
 ﻿// Content script: High-detail institutional terminal HUD overlay for TradingView, XM & FBS
-// Clean production version: Displays Upcoming Forecast/Prior before news, and Actual/Delta upon release.
+// Ordered cleanly: ACTUAL, FORECAST, PRIOR
+// Time display: 24-hour format with AM/PM (e.g., 14:30 PM GMT+2)
 (function() {
   console.log("[News Sniper Terminal] Connected to Live Institutional Economic Feed.");
+
+  function formatTime24WithAmPm(dateObj) {
+    const hours = dateObj.getHours();
+    const minutes = String(dateObj.getMinutes()).padStart(2, "0");
+    const seconds = String(dateObj.getSeconds()).padStart(2, "0");
+    const ampm = hours >= 12 ? "PM" : "AM";
+    const hours24 = String(hours).padStart(2, "0");
+    return `${hours24}:${minutes}:${seconds} ${ampm}`;
+  }
+
+  function formatShortTime24WithAmPm(dateObj) {
+    const hours = dateObj.getHours();
+    const minutes = String(dateObj.getMinutes()).padStart(2, "0");
+    const ampm = hours >= 12 ? "PM" : "AM";
+    const hours24 = String(hours).padStart(2, "0");
+    return `${hours24}:${minutes} ${ampm}`;
+  }
 
   let hud = document.getElementById("fn-sniper-hud");
   if (!hud) {
@@ -12,9 +30,9 @@
       top: 24px;
       right: 24px;
       z-index: 2147483647;
-      width: 360px;
-      min-width: 260px;
-      max-width: 600px;
+      width: 370px;
+      min-width: 270px;
+      max-width: 620px;
       background: #0b0e14;
       border: 1px solid #1e293b;
       border-radius: 8px;
@@ -37,7 +55,7 @@
           <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.8px; color: #f8fafc;">XAUUSD NEWS TERMINAL</span>
         </div>
         <div style="display: flex; align-items: center; gap: 8px;">
-          <span id="fn-time-display" style="font-size: 10px; color: #94a3b8; font-family: monospace;">--:--:-- GMT+2</span>
+          <span id="fn-time-display" style="font-size: 10px; color: #94a3b8; font-family: monospace;">--:--:-- -- GMT+2</span>
           <span style="font-size: 10px; color: #64748b; cursor: move;" title="Drag to Move">✥</span>
         </div>
       </div>
@@ -51,22 +69,30 @@
           <div id="fn-volatility-tag" style="font-size: clamp(8px, 2.2vw, 10px); color: #94a3b8; margin-top: 3px;">Tracking pre-release forecast & prior</div>
         </div>
 
-        <!-- Metrics Matrix -->
+        <!-- Metrics Matrix: STRICT ORDER: ACTUAL | FORECAST | PRIOR -->
         <div>
           <div id="fn-event-title" style="font-size: clamp(9px, 2.5vw, 11px); font-weight: 600; color: #38bdf8; margin-bottom: 6px;">Querying upcoming US macro event...</div>
           <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: #0f141d; padding: 8px; border-radius: 6px; border: 1px solid #1e293b;">
+            <!-- Column 1: ACTUAL -->
             <div>
-              <div id="fn-col1-label" style="font-size: 8px; color: #64748b; font-weight: 600; text-transform: uppercase;">Prior</div>
-              <div id="fn-actual-val" style="font-size: clamp(10px, 3vw, 14px); font-weight: 700; color: #f8fafc; font-family: monospace;">--</div>
+              <div style="font-size: 8px; color: #64748b; font-weight: 700; text-transform: uppercase;">Actual</div>
+              <div id="fn-actual-val" style="font-size: clamp(10px, 3vw, 14px); font-weight: 800; color: #94a3b8; font-family: monospace;">AWAITING</div>
             </div>
+            <!-- Column 2: FORECAST -->
             <div>
-              <div id="fn-col2-label" style="font-size: 8px; color: #64748b; font-weight: 600; text-transform: uppercase;">Forecast</div>
-              <div id="fn-est-val" style="font-size: clamp(10px, 3vw, 14px); font-weight: 700; color: #38bdf8; font-family: monospace;">--</div>
+              <div style="font-size: 8px; color: #64748b; font-weight: 700; text-transform: uppercase;">Forecast</div>
+              <div id="fn-est-val" style="font-size: clamp(10px, 3vw, 14px); font-weight: 800; color: #38bdf8; font-family: monospace;">--</div>
             </div>
+            <!-- Column 3: PRIOR -->
             <div>
-              <div id="fn-col3-label" style="font-size: 8px; color: #64748b; font-weight: 600; text-transform: uppercase;">Surprise Delta</div>
-              <div id="fn-diff-val" style="font-size: clamp(10px, 3vw, 14px); font-weight: 800; color: #64748b; font-family: monospace;">PENDING</div>
+              <div style="font-size: 8px; color: #64748b; font-weight: 700; text-transform: uppercase;">Prior</div>
+              <div id="fn-prior-val" style="font-size: clamp(10px, 3vw, 14px); font-weight: 800; color: #f8fafc; font-family: monospace;">--</div>
             </div>
+          </div>
+          <!-- Surprise Delta Strip (below the 3 metrics) -->
+          <div id="fn-delta-strip" style="margin-top: 6px; background: #0f141d; padding: 6px 8px; border-radius: 4px; border: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 9px; color: #64748b; font-weight: 600; text-transform: uppercase;">Surprise Delta:</span>
+            <span id="fn-diff-val" style="font-size: 11px; font-weight: 800; color: #94a3b8; font-family: monospace;">PENDING RELEASE</span>
           </div>
         </div>
 
@@ -146,17 +172,15 @@
       const action = document.getElementById("fn-action-text");
       const volTag = document.getElementById("fn-volatility-tag");
       const title = document.getElementById("fn-event-title");
-      const col1Label = document.getElementById("fn-col1-label");
-      const col2Label = document.getElementById("fn-col2-label");
-      const col3Label = document.getElementById("fn-col3-label");
       const actualVal = document.getElementById("fn-actual-val");
       const estVal = document.getElementById("fn-est-val");
+      const priorVal = document.getElementById("fn-prior-val");
       const diffVal = document.getElementById("fn-diff-val");
 
       const evDate = new Date(ev.date);
       // Convert to GMT+2
       const gmt2Date = new Date(evDate.getTime() + (2 * 60 + evDate.getTimezoneOffset()) * 60000);
-      const timeStr = gmt2Date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + " GMT+2";
+      const timeStr = formatShortTime24WithAmPm(gmt2Date) + " GMT+2";
 
       conviction.innerText = "UPCOMING RELEASE";
       conviction.style.color = "#38bdf8";
@@ -164,13 +188,14 @@
       volTag.innerText = `Releasing at ${timeStr} • Standby for Actual`;
 
       title.innerText = `Scheduled: ${ev.title} (${timeStr})`;
-      col1Label.innerText = "Prior";
-      actualVal.innerText = `${ev.previous}${ev.unit || ''}`;
-      col2Label.innerText = "Forecast";
+      actualVal.innerText = "AWAITING";
+      actualVal.style.color = "#94a3b8";
+
       estVal.innerText = `${ev.forecast}${ev.unit || ''}`;
-      col3Label.innerText = "Actual";
-      diffVal.innerText = "AWAITING";
-      diffVal.style.color = "#94a3b8";
+      priorVal.innerText = `${ev.previous}${ev.unit || ''}`;
+
+      diffVal.innerText = "PENDING RELEASE";
+      diffVal.style.color = "#64748b";
     }
 
     // Render Triggered Signal When Actual Drops
@@ -180,11 +205,9 @@
       const action = document.getElementById("fn-action-text");
       const volTag = document.getElementById("fn-volatility-tag");
       const title = document.getElementById("fn-event-title");
-      const col1Label = document.getElementById("fn-col1-label");
-      const col2Label = document.getElementById("fn-col2-label");
-      const col3Label = document.getElementById("fn-col3-label");
       const actualVal = document.getElementById("fn-actual-val");
       const estVal = document.getElementById("fn-est-val");
+      const priorVal = document.getElementById("fn-prior-val");
       const diffVal = document.getElementById("fn-diff-val");
 
       badge.style.backgroundColor = data.badgeColor || "#1e293b";
@@ -199,11 +222,12 @@
       volTag.style.color = "#ffffff";
 
       title.innerText = `${data.title} (${data.time || 'NOW'})`;
-      col1Label.innerText = "Actual";
       actualVal.innerText = `${data.actual}${data.unit || ''}`;
-      col2Label.innerText = "Forecast";
+      actualVal.style.color = "#ffffff";
+
       estVal.innerText = `${data.forecast}${data.unit || ''}`;
-      col3Label.innerText = "Surprise Delta";
+      priorVal.innerText = data.previous !== null && data.previous !== undefined ? `${data.previous}${data.unit || ''}` : "--";
+
       diffVal.innerText = `${data.diff}${data.unit || ''}`;
       diffVal.style.color = data.signal.includes("BUY") ? "#4ade80" : "#f87171";
 
@@ -228,12 +252,12 @@
       }
     });
 
-    // Clock (GMT+2)
+    // 24-hour Clock with AM/PM (GMT+2)
     setInterval(() => {
       const now = new Date();
       const gmt2 = new Date(now.getTime() + (2 * 60 + now.getTimezoneOffset()) * 60000);
       const timeEl = document.getElementById("fn-time-display");
-      if (timeEl) timeEl.innerText = gmt2.toLocaleTimeString() + " GMT+2";
+      if (timeEl) timeEl.innerText = formatTime24WithAmPm(gmt2) + " GMT+2";
     }, 1000);
   }
 })();
