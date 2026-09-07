@@ -1,0 +1,31 @@
+﻿{
+  "manifest_version": 3,
+  "name": "Fundamental News Sniper (Gold XAUUSD)",
+  "version": "1.0",
+  "description": "Instant BUY/SELL overlay indicator on TradingView, XM, and FBS web platforms upon US news release (NFP, CPI, Rates).",
+  "permissions": ["alarms", "storage"],
+  "host_permissions": [
+    "https://economic-calendar.tradingview.com/*",
+    "*://*.tradingview.com/*",
+    "*://*.xm.com/*",
+    "*://*.fbs.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.tradingview.com/*",
+        "*://*.xm.com/*",
+        "*://*.fbs.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Fundamental News Sniper"
+  }
+}
