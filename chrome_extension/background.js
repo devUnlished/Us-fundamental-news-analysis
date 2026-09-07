@@ -1,32 +1,34 @@
-﻿// Background Service Worker: polls calendar API and dispatches signals to active tabs
+﻿// Background Service Worker: polls calendar API, calculates deviation magnitude and multi-tier conviction
 const SEEN_EVENTS_KEY = "seen_news_event_ids";
 
 const INDICATOR_RULES = {
   // Tier 1: Mega Volatility
-  "non farm payrolls": { dir: 1, name: "Nonfarm Payrolls (NFP)", tier: 1 },
-  "nonfarm payrolls": { dir: 1, name: "Nonfarm Payrolls (NFP)", tier: 1 },
-  "unemployment rate": { dir: -1, name: "Unemployment Rate", tier: 1 },
-  "cpi": { dir: 1, name: "Consumer Price Index (CPI)", tier: 1 },
-  "core cpi": { dir: 1, name: "Core CPI", tier: 1 },
-  "core pce": { dir: 1, name: "Core PCE Price Index", tier: 1 },
-  "pce price index": { dir: 1, name: "PCE Price Index", tier: 2 },
-  "fed interest rate": { dir: 1, name: "Fed Interest Rate Decision", tier: 1 },
-  "interest rate decision": { dir: 1, name: "Interest Rate Decision", tier: 1 },
-  "fed funds": { dir: 1, name: "Fed Funds Rate", tier: 1 },
-  "fomc": { dir: 1, name: "FOMC Rate / Statement", tier: 1 },
+  "non farm payrolls": { dir: 1, name: "Nonfarm Payrolls (NFP)", tier: 1, unit: "k", stdDev: 35.0 },
+  "nonfarm payrolls": { dir: 1, name: "Nonfarm Payrolls (NFP)", tier: 1, unit: "k", stdDev: 35.0 },
+  "unemployment rate": { dir: -1, name: "Unemployment Rate", tier: 1, unit: "%", stdDev: 0.15 },
+  "cpi m/m": { dir: 1, name: "CPI MoM", tier: 1, unit: "%", stdDev: 0.15 },
+  "cpi y/y": { dir: 1, name: "CPI YoY", tier: 1, unit: "%", stdDev: 0.2 },
+  "cpi": { dir: 1, name: "Consumer Price Index (CPI)", tier: 1, unit: "%", stdDev: 0.2 },
+  "core cpi": { dir: 1, name: "Core CPI", tier: 1, unit: "%", stdDev: 0.15 },
+  "core pce": { dir: 1, name: "Core PCE Price Index", tier: 1, unit: "%", stdDev: 0.15 },
+  "pce price index": { dir: 1, name: "PCE Price Index", tier: 2, unit: "%", stdDev: 0.15 },
+  "fed interest rate": { dir: 1, name: "Fed Interest Rate Decision", tier: 1, unit: "%", stdDev: 0.25 },
+  "interest rate decision": { dir: 1, name: "Interest Rate Decision", tier: 1, unit: "%", stdDev: 0.25 },
+  "fed funds": { dir: 1, name: "Fed Funds Rate", tier: 1, unit: "%", stdDev: 0.25 },
+  "fomc": { dir: 1, name: "FOMC Rate / Statement", tier: 1, unit: "%", stdDev: 0.25 },
 
   // Tier 2: High Volatility
-  "retail sales": { dir: 1, name: "Retail Sales", tier: 2 },
-  "core retail sales": { dir: 1, name: "Core Retail Sales", tier: 2 },
-  "gdp": { dir: 1, name: "Gross Domestic Product (GDP)", tier: 2 },
-  "ism manufacturing": { dir: 1, name: "ISM Manufacturing PMI", tier: 2 },
-  "ism services": { dir: 1, name: "ISM Services PMI", tier: 2 },
-  "ppi": { dir: 1, name: "Producer Price Index (PPI)", tier: 2 },
-  "jolts": { dir: 1, name: "JOLTs Job Openings", tier: 2 },
+  "retail sales": { dir: 1, name: "Retail Sales", tier: 2, unit: "%", stdDev: 0.3 },
+  "core retail sales": { dir: 1, name: "Core Retail Sales", tier: 2, unit: "%", stdDev: 0.3 },
+  "gdp": { dir: 1, name: "Gross Domestic Product (GDP)", tier: 2, unit: "%", stdDev: 0.4 },
+  "ism manufacturing": { dir: 1, name: "ISM Manufacturing PMI", tier: 2, unit: "pts", stdDev: 1.2 },
+  "ism services": { dir: 1, name: "ISM Services PMI", tier: 2, unit: "pts", stdDev: 1.2 },
+  "ppi": { dir: 1, name: "Producer Price Index (PPI)", tier: 2, unit: "%", stdDev: 0.2 },
+  "jolts": { dir: 1, name: "JOLTs Job Openings", tier: 2, unit: "M", stdDev: 0.25 },
 
   // Tier 3: Medium-High Volatility
-  "initial jobless claims": { dir: -1, name: "Initial Jobless Claims", tier: 3 },
-  "consumer sentiment": { dir: 1, name: "UoM Consumer Sentiment", tier: 3 }
+  "initial jobless claims": { dir: -1, name: "Initial Jobless Claims", tier: 3, unit: "k", stdDev: 12.0 },
+  "consumer sentiment": { dir: 1, name: "UoM Consumer Sentiment", tier: 3, unit: "pts", stdDev: 2.0 }
 };
 
 function matchRule(title) {
@@ -35,6 +37,57 @@ function matchRule(title) {
     if (lower.includes(key)) return rule;
   }
   return null;
+}
+
+function computeStrength(diff, impactDir, rule) {
+  const usdScore = diff * impactDir;
+  const absDiff = Math.abs(diff);
+  const ratio = rule.stdDev ? absDiff / rule.stdDev : 1.0;
+
+  let signalAction = "NEUTRAL";
+  let convictionLevel = "NEUTRAL";
+  let expectedPips = "15 - 30 pips";
+  let badgeColor = "#64748b";
+
+  if (usdScore > 0) {
+    // Strong USD -> Sell Gold
+    if (ratio >= 2.0) {
+      signalAction = "SELL VERY HARD";
+      convictionLevel = "EXTREME SURPRISE";
+      expectedPips = "180 - 350+ pips";
+      badgeColor = "#991b1b"; // Deep dark red
+    } else if (ratio >= 1.0) {
+      signalAction = "SELL HARD";
+      convictionLevel = "HIGH CONVICTION";
+      expectedPips = "90 - 180 pips";
+      badgeColor = "#dc2626"; // Strong red
+    } else {
+      signalAction = "SELL MODERATE";
+      convictionLevel = "MODERATE MOVE";
+      expectedPips = "40 - 80 pips";
+      badgeColor = "#f87171"; // Light red
+    }
+  } else if (usdScore < 0) {
+    // Weak USD -> Buy Gold
+    if (ratio >= 2.0) {
+      signalAction = "BUY VERY HARD";
+      convictionLevel = "EXTREME SURPRISE";
+      expectedPips = "180 - 350+ pips";
+      badgeColor = "#065f46"; // Deep emerald
+    } else if (ratio >= 1.0) {
+      signalAction = "BUY HARD";
+      convictionLevel = "HIGH CONVICTION";
+      expectedPips = "90 - 180 pips";
+      badgeColor = "#059669"; // Bright green
+    } else {
+      signalAction = "BUY MODERATE";
+      convictionLevel = "MODERATE MOVE";
+      expectedPips = "40 - 80 pips";
+      badgeColor = "#34d399"; // Light green
+    }
+  }
+
+  return { signalAction, convictionLevel, expectedPips, badgeColor, ratio };
 }
 
 async function fetchAndEvaluate() {
@@ -60,33 +113,27 @@ async function fetchAndEvaluate() {
         if (rule) {
           const actual = parseFloat(ev.actual);
           const benchmark = ev.forecast !== null ? parseFloat(ev.forecast) : parseFloat(ev.previous);
+          const previous = ev.previous !== null && ev.previous !== undefined ? parseFloat(ev.previous) : null;
 
           if (!isNaN(actual) && !isNaN(benchmark)) {
             const diff = actual - benchmark;
-            const usdScore = diff * rule.dir;
+            const strength = computeStrength(diff, rule.dir, rule);
 
-            let signal = "NEUTRAL";
-            let explanation = "";
-
-            if (usdScore > 0) {
-              signal = "SELL"; // Strong USD -> Drop Gold
-              explanation = `${rule.name}: Actual (${actual}) beat forecast/prior (${benchmark}) -> Strong USD -> SELL GOLD`;
-            } else if (usdScore < 0) {
-              signal = "BUY";  // Weak USD -> Rally Gold
-              explanation = `${rule.name}: Actual (${actual}) missed forecast/prior (${benchmark}) -> Weak USD -> BUY GOLD`;
-            }
-
-            if (signal !== "NEUTRAL") {
-              broadcastSignal({
-                signal,
-                title: rule.name,
-                tier: rule.tier,
-                actual,
-                benchmark,
-                explanation,
-                time: new Date().toLocaleTimeString()
-              });
-            }
+            broadcastSignal({
+              signal: strength.signalAction,
+              conviction: strength.convictionLevel,
+              expectedPips: strength.expectedPips,
+              badgeColor: strength.badgeColor,
+              ratio: strength.ratio.toFixed(1),
+              title: rule.name,
+              unit: rule.unit,
+              tier: rule.tier,
+              actual,
+              forecast: benchmark,
+              previous,
+              diff: (diff > 0 ? "+" : "") + diff.toFixed(2),
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+            });
           }
         }
       }

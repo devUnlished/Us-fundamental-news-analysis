@@ -1,105 +1,217 @@
-// Content script injected onto TradingView, XM WebTrader, and FBS WebTrader pages
+﻿// Content script: High-detail institutional terminal HUD overlay for TradingView, XM & FBS
 (function() {
-  console.log("[Fundamental News Sniper] Injected on chart page.");
+  console.log("[News Sniper Terminal] Loaded.");
 
-  let hudContainer = document.getElementById("fn-sniper-hud");
-  if (!hudContainer) {
-    hudContainer = document.createElement("div");
-    hudContainer.id = "fn-sniper-hud";
-    hudContainer.style.position = "fixed";
-    hudContainer.style.top = "20px";
-    hudContainer.style.right = "20px";
-    hudContainer.style.zIndex = "9999999";
-    hudContainer.style.backgroundColor = "rgba(18, 20, 24, 0.95)";
-    hudContainer.style.color = "#ffffff";
-    hudContainer.style.padding = "12px 18px";
-    hudContainer.style.borderRadius = "8px";
-    hudContainer.style.boxShadow = "0 6px 20px rgba(0,0,0,0.6)";
-    hudContainer.style.fontFamily = "Segoe UI, -apple-system, sans-serif";
-    hudContainer.style.border = "1px solid #334155";
-    hudContainer.style.minWidth = "300px";
-    hudContainer.style.transition = "all 0.3s ease";
+  let hud = document.getElementById("fn-sniper-hud");
+  if (!hud) {
+    hud = document.createElement("div");
+    hud.id = "fn-sniper-hud";
+    hud.style.cssText = `
+      position: fixed;
+      top: 24px;
+      right: 24px;
+      z-index: 2147483647;
+      width: 360px;
+      background: #0b0e14;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.05);
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      overflow: hidden;
+      user-select: none;
+    `;
 
-    hudContainer.innerHTML = `
-      <div style="font-size: 11px; font-weight: bold; color: #f0b90b; letter-spacing: 0.5px; margin-bottom: 6px;">
-        ⚡ FUNDAMENTAL NEWS SNIPER | XAUUSD
+    hud.innerHTML = `
+      <!-- Header -->
+      <div style="background: #141a24; padding: 8px 12px; border-bottom: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: #22c55e; display: inline-block; box-shadow: 0 0 8px #22c55e;"></span>
+          <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.8px; color: #f8fafc;">XAUUSD NEWS TERMINAL</span>
+        </div>
+        <span id="fn-time-display" style="font-size: 10px; color: #94a3b8; font-family: monospace;">--:--:-- GMT+2</span>
       </div>
-      <div id="fn-sniper-signal" style="font-size: 16px; font-weight: 800; background: #334155; padding: 8px; border-radius: 4px; text-align: center; margin-bottom: 6px;">
-        STANDBY FOR NEWS
+
+      <!-- Main Action Banner -->
+      <div style="padding: 12px 14px 10px 14px;">
+        <div id="fn-badge" style="background: #1e293b; border-radius: 6px; padding: 10px 12px; text-align: center; border: 1px solid rgba(255,255,255,0.06); transition: all 0.25s ease;">
+          <div id="fn-conviction-tag" style="font-size: 9px; font-weight: 700; letter-spacing: 1px; color: #94a3b8; margin-bottom: 2px;">STANDBY MODE</div>
+          <div id="fn-action-text" style="font-size: 20px; font-weight: 900; letter-spacing: 0.5px; color: #f1f5f9;">MONITORING FEED</div>
+          <div id="fn-volatility-tag" style="font-size: 10px; color: #64748b; margin-top: 2px;">Expected Move: Normal Range</div>
+        </div>
       </div>
-      <div id="fn-sniper-desc" style="font-size: 11px; color: #94a3b8; line-height: 1.4; margin-bottom: 8px;">
-        Monitoring US high impact data releases (NFP, CPI, FOMC)...
+
+      <!-- Metrics Matrix -->
+      <div style="padding: 0 14px 10px 14px;">
+        <div id="fn-event-title" style="font-size: 11px; font-weight: 600; color: #38bdf8; margin-bottom: 8px;">Awaiting US Macro Release...</div>
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: #0f141d; padding: 8px; border-radius: 6px; border: 1px solid #1e293b;">
+          <div>
+            <div style="font-size: 9px; color: #64748b; font-weight: 600; text-transform: uppercase;">Actual</div>
+            <div id="fn-actual-val" style="font-size: 13px; font-weight: 700; color: #f8fafc; font-family: monospace;">--</div>
+          </div>
+          <div>
+            <div style="font-size: 9px; color: #64748b; font-weight: 600; text-transform: uppercase;">Forecast</div>
+            <div id="fn-est-val" style="font-size: 13px; font-weight: 700; color: #94a3b8; font-family: monospace;">--</div>
+          </div>
+          <div>
+            <div style="font-size: 9px; color: #64748b; font-weight: 600; text-transform: uppercase;">Surprise Delta</div>
+            <div id="fn-diff-val" style="font-size: 13px; font-weight: 800; color: #64748b; font-family: monospace;">--</div>
+          </div>
+        </div>
       </div>
-      <div style="display: flex; gap: 6px;">
-        <button id="fn-test-buy" style="flex: 1; background: #059669; color: white; border: none; border-radius: 4px; padding: 4px; font-size: 10px; font-weight: bold; cursor: pointer;">
-          Demo BUY (NFP Miss)
-        </button>
-        <button id="fn-test-sell" style="flex: 1; background: #dc2626; color: white; border: none; border-radius: 4px; padding: 4px; font-size: 10px; font-weight: bold; cursor: pointer;">
-          Demo SELL (NFP Beat)
-        </button>
+
+      <!-- Live Demo Trigger Controls -->
+      <div style="padding: 6px 14px 12px 14px; border-top: 1px solid #18202f; background: #0c1017; display: flex; flex-direction: column; gap: 6px;">
+        <div style="font-size: 9px; font-weight: 700; color: #64748b; letter-spacing: 0.5px;">CONVICTION LEVEL DEMO:</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+          <button id="fn-demo-buy-hard" style="background: #065f46; border: 1px solid #047857; color: #ecfdf5; border-radius: 4px; padding: 6px 4px; font-size: 10px; font-weight: 700; cursor: pointer;">
+            🟢 BUY VERY HARD
+          </button>
+          <button id="fn-demo-sell-hard" style="background: #991b1b; border: 1px solid #b91c1c; color: #fef2f2; border-radius: 4px; padding: 6px 4px; font-size: 10px; font-weight: 700; cursor: pointer;">
+            🔴 SELL VERY HARD
+          </button>
+          <button id="fn-demo-buy-mod" style="background: #064e3b; border: 1px solid #065f46; color: #a7f3d0; border-radius: 4px; padding: 4px; font-size: 9px; font-weight: 600; cursor: pointer;">
+            Buy Moderate
+          </button>
+          <button id="fn-demo-sell-mod" style="background: #7f1d1d; border: 1px solid #991b1b; color: #fecaca; border-radius: 4px; padding: 4px; font-size: 9px; font-weight: 600; cursor: pointer;">
+            Sell Moderate
+          </button>
+        </div>
       </div>
     `;
-    document.body.appendChild(hudContainer);
+    document.body.appendChild(hud);
 
-    document.getElementById("fn-test-buy").addEventListener("click", () => {
-      displaySignal({
-        signal: "BUY",
-        title: "Nonfarm Payrolls (NFP)",
-        actual: 135.0,
-        benchmark: 185.0,
-        explanation: "Actual (135k) missed forecast (185k) -> Weak USD -> BUY GOLD"
-      });
-    });
-
-    document.getElementById("fn-test-sell").addEventListener("click", () => {
-      displaySignal({
-        signal: "SELL",
-        title: "Nonfarm Payrolls (NFP)",
-        actual: 255.0,
-        benchmark: 185.0,
-        explanation: "Actual (255k) beat forecast (185k) -> Strong USD -> SELL GOLD"
-      });
-    });
-  }
-
-  function playAlertSound(isBuy) {
-    try {
-      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(isBuy ? 880 : 440, audioCtx.currentTime);
-      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.6);
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.6);
-    } catch(e) {}
-  }
-
-  function displaySignal(data) {
-    const signalEl = document.getElementById("fn-sniper-signal");
-    const descEl = document.getElementById("fn-sniper-desc");
-
-    if (data.signal === "BUY") {
-      signalEl.style.backgroundColor = "#10b981";
-      signalEl.style.color = "#ffffff";
-      signalEl.innerText = "🟢 BUY GOLD (WEAK USD)";
-      playAlertSound(true);
-    } else if (data.signal === "SELL") {
-      signalEl.style.backgroundColor = "#ef4444";
-      signalEl.style.color = "#ffffff";
-      signalEl.innerText = "🔴 SELL GOLD (STRONG USD)";
-      playAlertSound(false);
+    // Audio Engine
+    function playAudio(isBuy, isVeryHard) {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const baseFreq = isBuy ? (isVeryHard ? 980 : 800) : (isVeryHard ? 340 : 440);
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = isVeryHard ? "sawtooth" : "sine";
+        osc.frequency.setValueAtTime(baseFreq, ctx.currentTime);
+        if (isBuy) {
+          osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.35, ctx.currentTime + 0.3);
+        } else {
+          osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.75, ctx.currentTime + 0.35);
+        }
+        gain.gain.setValueAtTime(0.35, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.55);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.55);
+      } catch(e) {}
     }
 
-    descEl.innerText = `${data.title} | Actual: ${data.actual} vs Est: ${data.benchmark}\n${data.explanation}`;
-  }
+    // Render Event & Conviction
+    window.renderSniperSignal = function(data) {
+      const badge = document.getElementById("fn-badge");
+      const conviction = document.getElementById("fn-conviction-tag");
+      const action = document.getElementById("fn-action-text");
+      const volTag = document.getElementById("fn-volatility-tag");
+      const title = document.getElementById("fn-event-title");
+      const actualVal = document.getElementById("fn-actual-val");
+      const estVal = document.getElementById("fn-est-val");
+      const diffVal = document.getElementById("fn-diff-val");
 
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.type === "NEWS_SIGNAL") {
-      displaySignal(msg.data);
-    }
-  });
+      badge.style.backgroundColor = data.badgeColor || "#1e293b";
+      badge.style.border = "1px solid rgba(255, 255, 255, 0.25)";
+      badge.style.boxShadow = `0 0 20px ${data.badgeColor}88`;
+
+      conviction.innerText = data.conviction || "SIGNAL DETECTED";
+      conviction.style.color = "#ffffff";
+      action.innerText = data.signal;
+      action.style.color = "#ffffff";
+      volTag.innerText = `Expected Volatility: ~${data.expectedPips}`;
+      volTag.style.color = "#ffffff";
+
+      title.innerText = `${data.title} (${data.time || 'NOW'})`;
+      actualVal.innerText = `${data.actual}${data.unit || ''}`;
+      estVal.innerText = `${data.forecast}${data.unit || ''}`;
+      diffVal.innerText = `${data.diff}${data.unit || ''}`;
+      diffVal.style.color = data.signal.includes("BUY") ? "#4ade80" : "#f87171";
+
+      const isBuy = data.signal.includes("BUY");
+      const isVeryHard = data.signal.includes("VERY HARD");
+      playAudio(isBuy, isVeryHard);
+    };
+
+    // Wire Demo Buttons
+    document.getElementById("fn-demo-buy-hard").onclick = () => {
+      window.renderSniperSignal({
+        signal: "BUY VERY HARD",
+        conviction: "EXTREME SURPRISE (DELTA: -95k)",
+        expectedPips: "220 - 350+ pips",
+        badgeColor: "#065f46",
+        title: "US Nonfarm Payrolls (NFP)",
+        actual: 90.0,
+        forecast: 185.0,
+        diff: "-95.00",
+        unit: "k",
+        time: "14:30:01"
+      });
+    };
+
+    document.getElementById("fn-demo-sell-hard").onclick = () => {
+      window.renderSniperSignal({
+        signal: "SELL VERY HARD",
+        conviction: "EXTREME SURPRISE (DELTA: +110k)",
+        expectedPips: "220 - 350+ pips",
+        badgeColor: "#991b1b",
+        title: "US Nonfarm Payrolls (NFP)",
+        actual: 295.0,
+        forecast: 185.0,
+        diff: "+110.00",
+        unit: "k",
+        time: "14:30:01"
+      });
+    };
+
+    document.getElementById("fn-demo-buy-mod").onclick = () => {
+      window.renderSniperSignal({
+        signal: "BUY MODERATE",
+        conviction: "MODERATE SURPRISE (DELTA: -20k)",
+        expectedPips: "40 - 75 pips",
+        badgeColor: "#059669",
+        title: "US Nonfarm Payrolls (NFP)",
+        actual: 165.0,
+        forecast: 185.0,
+        diff: "-20.00",
+        unit: "k",
+        time: "14:30:01"
+      });
+    };
+
+    document.getElementById("fn-demo-sell-mod").onclick = () => {
+      window.renderSniperSignal({
+        signal: "SELL MODERATE",
+        conviction: "MODERATE SURPRISE (DELTA: +25k)",
+        expectedPips: "40 - 75 pips",
+        badgeColor: "#b91c1c",
+        title: "US Nonfarm Payrolls (NFP)",
+        actual: 210.0,
+        forecast: 185.0,
+        diff: "+25.00",
+        unit: "k",
+        time: "14:30:01"
+      });
+    };
+
+    // Live Message Listener from background worker
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (msg.type === "NEWS_SIGNAL") {
+        window.renderSniperSignal(msg.data);
+      }
+    });
+
+    // Clock
+    setInterval(() => {
+      const now = new Date();
+      // GMT+2 (add 2 hours to UTC)
+      const gmt2 = new Date(now.getTime() + (2 * 60 + now.getTimezoneOffset()) * 60000);
+      const timeEl = document.getElementById("fn-time-display");
+      if (timeEl) timeEl.innerText = gmt2.toLocaleTimeString() + " GMT+2";
+    }, 1000);
+  }
 })();
