@@ -82,7 +82,7 @@
             <!-- Column 2: FORECAST -->
             <div>
               <div style="font-size: 8px; color: #64748b; font-weight: 700; text-transform: uppercase;">Forecast</div>
-              <div id="fn-est-val" style="font-size: clamp(10px, 2.8vw, 13px); font-weight: 800; color: #38bdf8; font-family: monospace;">--</div>
+              <div id="fn-est-val" style="font-size: clamp(9px, 2.5vw, 13px); font-weight: 800; color: #38bdf8; font-family: monospace;">--</div>
             </div>
             <!-- Column 3: PRIOR -->
             <div>
@@ -186,13 +186,22 @@
       conviction.innerText = "UPCOMING RELEASE";
       conviction.style.color = "#38bdf8";
       action.innerText = ev.title;
-      volTag.innerText = `Releasing at ${timeStr} • Standby for Actual`;
+
+      const hasForecast = ev.hasForecast !== false && ev.forecast !== "N/A" && ev.forecast !== "N/A (Uses Prior)";
+      if (hasForecast) {
+        volTag.innerText = `Releasing at ${timeStr} • Consensus vs Prior loaded`;
+        estVal.innerText = `${ev.forecast}${ev.unit || ''}`;
+        estVal.style.color = "#38bdf8";
+      } else {
+        volTag.innerText = `Releasing at ${timeStr} • No Wall St. forecast, baseline = Prior`;
+        estVal.innerText = "None (vs Prior)";
+        estVal.style.color = "#64748b";
+      }
 
       title.innerText = `Scheduled: ${ev.title} (${timeStr})`;
       actualVal.innerText = "AWAITING";
       actualVal.style.color = "#94a3b8";
 
-      estVal.innerText = `${ev.forecast}${ev.unit || ''}`;
       priorVal.innerText = `${ev.previous}${ev.unit || ''}`;
 
       diffVal.innerText = "PENDING RELEASE";
@@ -219,14 +228,14 @@
       conviction.style.color = "#ffffff";
       action.innerText = data.signal;
       action.style.color = "#ffffff";
-      volTag.innerText = `Expected Volatility: ~${data.expectedPips}`;
+      volTag.innerText = `Expected Volatility: ~${data.expectedPips} (${data.benchmarkSource || 'Benchmark'})`;
       volTag.style.color = "#ffffff";
 
       title.innerText = `${data.title} (${data.time || 'NOW'})`;
       actualVal.innerText = `${data.actual}${data.unit || ''}`;
       actualVal.style.color = "#ffffff";
 
-      estVal.innerText = `${data.forecast}${data.unit || ''}`;
+      estVal.innerText = data.forecast !== null && data.forecast !== undefined ? `${data.forecast}${data.unit || ''}` : "--";
       priorVal.innerText = data.previous !== null && data.previous !== undefined ? `${data.previous}${data.unit || ''}` : "--";
 
       diffVal.innerText = `${data.diff}${data.unit || ''}`;

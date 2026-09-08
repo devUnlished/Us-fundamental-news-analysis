@@ -125,8 +125,10 @@ async function fetchAndEvaluate() {
       if (hasActual && !seen.has(ev.id)) {
         seen.add(ev.id);
         const actual = parseFloat(ev.actual);
-        const benchmark = ev.forecast !== null && ev.forecast !== undefined ? parseFloat(ev.forecast) : parseFloat(ev.previous);
+        const hasForecast = ev.forecast !== null && ev.forecast !== undefined;
+        const benchmark = hasForecast ? parseFloat(ev.forecast) : parseFloat(ev.previous);
         const previous = ev.previous !== null && ev.previous !== undefined ? parseFloat(ev.previous) : null;
+        const benchmarkSource = hasForecast ? "Forecast" : "Prior (No Forecast)";
 
         if (!isNaN(actual) && !isNaN(benchmark)) {
           const diff = actual - benchmark;
@@ -143,8 +145,9 @@ async function fetchAndEvaluate() {
             unit: rule.unit,
             tier: rule.tier,
             actual,
-            forecast: benchmark,
+            forecast: hasForecast ? benchmark : "None (vs Prior)",
             previous,
+            benchmarkSource,
             diff: (diff > 0 ? "+" : "") + diff.toFixed(2),
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
           });
@@ -156,12 +159,14 @@ async function fetchAndEvaluate() {
         const diffToNow = evTime - now.getTime();
         if (diffToNow < closestTimeDiff) {
           closestTimeDiff = diffToNow;
+          const hasFc = ev.forecast !== null && ev.forecast !== undefined;
           closestUpcoming = {
             id: ev.id,
             title: rule.name,
             date: ev.date,
-            forecast: ev.forecast !== null && ev.forecast !== undefined ? ev.forecast : "N/A",
-            previous: ev.previous !== null && ev.previous !== undefined ? ev.previous : "N/A",
+            forecast: hasFc ? ev.forecast : "N/A (Uses Prior)",
+            hasForecast: hasFc,
+            previous: ev.previous !== null && ev.previous !== undefined ? ev.previous : "--",
             unit: rule.unit,
             tier: rule.tier,
             timeDiffMs: diffToNow
