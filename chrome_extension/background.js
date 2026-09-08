@@ -93,6 +93,7 @@ function computeStrength(diff, impactDir, rule) {
 }
 
 let latestUpcomingEvent = null;
+let lastTriggeredSignal = null;
 
 async function fetchAndEvaluate() {
   try {
@@ -122,8 +123,7 @@ async function fetchAndEvaluate() {
       const hasActual = ev.actual !== null && ev.actual !== undefined;
 
       // 1. Check for newly released Actual data
-      if (hasActual && !seen.has(ev.id)) {
-        seen.add(ev.id);
+      if (hasActual) {
         const actual = parseFloat(ev.actual);
         const hasForecast = ev.forecast !== null && ev.forecast !== undefined;
         const benchmark = hasForecast ? parseFloat(ev.forecast) : parseFloat(ev.previous);
@@ -134,7 +134,7 @@ async function fetchAndEvaluate() {
           const diff = actual - benchmark;
           const strength = computeStrength(diff, rule.dir, rule);
 
-          broadcastSignal({
+          const signalPayload = {
             type: "NEWS_SIGNAL",
             signal: strength.signalAction,
             conviction: strength.convictionLevel,
@@ -150,32 +150,45 @@ async function fetchAndEvaluate() {
             benchmarkSource,
             diff: (diff > 0 ? "+" : "") + diff.toFixed(2),
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-          });
+          };
+
+          lastTriggeredSignal = signalPayload;
+
+          if (!seen.has(ev.id)) {
+            seen.add(ev.id);
+            broadcastSignal(signalPayload);
+          }
         }
       }
 
       // 2. Track upcoming events where actual is not yet released
-      if (!hasActual && evTime >= now.getTime()) {
+      // Include overdue events that passed within the last 45 minutes where the agency delayed publishing the Actual
+      if (!hasActual) {
         const diffToNow = evTime - now.getTime();
-        if (diffToNow < closestTimeDiff) {
-          closestTimeDiff = diffToNow;
-          const hasFc = ev.forecast !== null && ev.forecast !== undefined;
-          closestUpcoming = {
-            id: ev.id,
-            title: rule.name,
-            date: ev.date,
-            forecast: hasFc ? ev.forecast : "N/A (Uses Prior)",
-            hasForecast: hasFc,
-            previous: ev.previous !== null && ev.previous !== undefined ? ev.previous : "--",
-            unit: rule.unit,
-            tier: rule.tier,
-            timeDiffMs: diffToNow
-          };
+        // Allow up to 45 minutes past scheduled time before moving to next event
+        if (diffToNow >= -45 * 60 * 1000) {
+          const sortMetric = Math.abs(diffToNow);
+          if (sortMetric < closestTimeDiff) {
+            closestTimeDiff = sortMetric;
+            const hasFc = ev.forecast !== null && ev.forecast !== undefined;
+            closestUpcoming = {
+              id: ev.id,
+              title: rule.name,
+              date: ev.date,
+              forecast: hasFc ? ev.forecast : "N/A (Uses Prior)",
+              hasForecast: hasFc,
+              previous: ev.previous !== null && ev.previous !== undefined ? ev.previous : "--",
+              unit: rule.unit,
+              tier: rule.tier,
+              isDelayed: diffToNow < 0,
+              delayedMinutes: diffToNow < 0 ? Math.floor(Math.abs(diffToNow) / 60000) : 0,
+              timeDiffMs: diffToNow
+            };
+          }
         }
       }
     }
 
-    // Broadcast upcoming event details so HUD immediately shows forecast & prior before release
     if (closestUpcoming) {
       latestUpcomingEvent = closestUpcoming;
       broadcastSignal({
@@ -204,9 +217,9 @@ function broadcastSignal(payload) {
 setInterval(fetchAndEvaluate, 2000);
 fetchAndEvaluate();
 
-// When a tab opens or requests initial state, send latest upcoming event
+// When a tab opens or requests initial state, send latest upcoming or signal
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "GET_UPCOMING_EVENT") {
-    sendResponse({ upcoming: latestUpcomingEvent });
+    sendResponse({ upcoming: latestUpcomingEvent, lastSignal: lastTriggeredSignal });
   }
 });

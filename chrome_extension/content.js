@@ -183,17 +183,32 @@
       const gmt2Date = new Date(evDate.getTime() + (2 * 60 + evDate.getTimezoneOffset()) * 60000);
       const timeStr = formatShortTime24WithAmPm(gmt2Date) + " GMT+2";
 
-      conviction.innerText = "UPCOMING RELEASE";
-      conviction.style.color = "#38bdf8";
       action.innerText = ev.title;
+
+      if (ev.isDelayed) {
+        conviction.innerText = "AWAITING SOURCE RELEASE (DELAYED)";
+        conviction.style.color = "#f59e0b";
+        volTag.innerText = `Scheduled ${timeStr} • Agency has not dropped actual yet (${ev.delayedMinutes}m overdue)`;
+        diffVal.innerText = "WAITING FOR SOURCE";
+        diffVal.style.color = "#f59e0b";
+      } else {
+        conviction.innerText = "UPCOMING RELEASE";
+        conviction.style.color = "#38bdf8";
+        const hasForecast = ev.hasForecast !== false && ev.forecast !== "N/A" && ev.forecast !== "N/A (Uses Prior)";
+        if (hasForecast) {
+          volTag.innerText = `Releasing at ${timeStr} • Consensus vs Prior loaded`;
+        } else {
+          volTag.innerText = `Releasing at ${timeStr} • No Wall St. forecast, baseline = Prior`;
+        }
+        diffVal.innerText = "PENDING RELEASE";
+        diffVal.style.color = "#64748b";
+      }
 
       const hasForecast = ev.hasForecast !== false && ev.forecast !== "N/A" && ev.forecast !== "N/A (Uses Prior)";
       if (hasForecast) {
-        volTag.innerText = `Releasing at ${timeStr} • Consensus vs Prior loaded`;
         estVal.innerText = `${ev.forecast}${ev.unit || ''}`;
         estVal.style.color = "#38bdf8";
       } else {
-        volTag.innerText = `Releasing at ${timeStr} • No Wall St. forecast, baseline = Prior`;
         estVal.innerText = "None (vs Prior)";
         estVal.style.color = "#64748b";
       }
@@ -203,9 +218,6 @@
       actualVal.style.color = "#94a3b8";
 
       priorVal.innerText = `${ev.previous}${ev.unit || ''}`;
-
-      diffVal.innerText = "PENDING RELEASE";
-      diffVal.style.color = "#64748b";
     }
 
     // Render Triggered Signal When Actual Drops
@@ -255,10 +267,14 @@
       }
     });
 
-    // Request upcoming event state on initialization
+    // Request upcoming event state or last signal on initialization
     chrome.runtime.sendMessage({ type: "GET_UPCOMING_EVENT" }, (resp) => {
-      if (resp && resp.upcoming) {
-        renderUpcoming(resp.upcoming);
+      if (resp) {
+        if (resp.lastSignal) {
+          window.renderSniperSignal(resp.lastSignal);
+        } else if (resp.upcoming) {
+          renderUpcoming(resp.upcoming);
+        }
       }
     });
 
