@@ -1,4 +1,4 @@
-﻿// Content script: High-detail institutional terminal HUD overlay for TradingView, XM & FBS
+// Content script: High-detail institutional terminal HUD overlay for TradingView, XM & FBS
 // Clean, minimal layout: Upcoming event, Live Metrics, Trade Horizon, and an Expandable/Collapsible History Accordion
 (function() {
   console.log("[News Sniper Terminal] Connected to Live Institutional Economic Feed.");
@@ -149,8 +149,8 @@
                 <button data-cat="ALL" style="background: #2563eb; color: #ffffff; border: none; border-radius: 3px; font-size: 7.5px; padding: 2px 5px; cursor: pointer; font-weight: 700;">ALL</button>
                 <button data-cat="NFP" style="background: #1e293b; color: #94a3b8; border: none; border-radius: 3px; font-size: 7.5px; padding: 2px 5px; cursor: pointer;">NFP</button>
                 <button data-cat="CPI" style="background: #1e293b; color: #94a3b8; border: none; border-radius: 3px; font-size: 7.5px; padding: 2px 5px; cursor: pointer;">CPI</button>
+                <button data-cat="FOMC" style="background: #1e293b; color: #94a3b8; border: none; border-radius: 3px; font-size: 7.5px; padding: 2px 5px; cursor: pointer;">FOMC</button>
                 <button data-cat="ADP" style="background: #1e293b; color: #94a3b8; border: none; border-radius: 3px; font-size: 7.5px; padding: 2px 5px; cursor: pointer;">ADP</button>
-                <button data-cat="PPI" style="background: #1e293b; color: #94a3b8; border: none; border-radius: 3px; font-size: 7.5px; padding: 2px 5px; cursor: pointer;">PPI</button>
               </div>
               <button id="fn-view-more-btn" style="background: #1e293b; color: #38bdf8; border: 1px solid #334155; border-radius: 3px; font-size: 7.5px; padding: 2px 6px; cursor: pointer; font-weight: 700;">
                 +5 More
@@ -265,6 +265,15 @@
       if (!container || !isAccordionOpen) return;
 
       const filtered = cachedHistory.filter(item => {
+        const titleLower = (item.title || "").toLowerCase();
+        // Discard any noisy secondaries
+        if (titleLower.includes("u-6") || titleLower.includes("annual revision") || titleLower.includes("productivity") || titleLower.includes("weekly") || titleLower.includes("government payrolls") || titleLower.includes("manufacturing payrolls") || titleLower.includes("private")) {
+          return false;
+        }
+        // Only focus categories
+        if (!["NFP", "CPI", "FOMC", "ADP"].includes(item.category)) {
+          return false;
+        }
         if (currentFilter === "ALL") return true;
         return item.category === currentFilter;
       });

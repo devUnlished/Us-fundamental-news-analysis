@@ -1,4 +1,4 @@
-﻿// Background Service Worker: robust multi-tab state sync, real-time polling, and 120-day historical archive
+// Background Service Worker: robust multi-tab state sync, real-time polling, and 120-day historical archive
 // Includes Trade Horizon & Impulse Duration Strategy (Macro Trend vs. 15-Min Scalp Trap)
 const SEEN_EVENTS_KEY = "seen_news_event_ids";
 const LATEST_SIGNAL_KEY = "latest_triggered_signal";
@@ -43,11 +43,48 @@ const INDICATOR_RULES = {
 
 function matchRule(title) {
   const lower = title.toLowerCase();
-  if (lower.includes("productivity") || lower.includes("annual revision")) return null;
+  if (lower.includes("productivity") || lower.includes("annual revision") || lower.includes("u-6")) return null;
   for (const [key, rule] of Object.entries(INDICATOR_RULES)) {
     if (lower.includes(key)) return rule;
   }
   return null;
+}
+
+// Strict filter for history view: only major institutional market movers
+function isFocusHistoryEvent(title, category) {
+  const low = (title || "").toLowerCase().trim();
+  
+  // Explicit exclusions for noisy secondary metrics
+  const noisySubstrings = [
+    "u-6", "annual revision", "productivity", "weekly",
+    "government payrolls", "manufacturing payrolls", "private",
+    "projection", "minutes", "s.a", "qoq", "2nd est", "adv", "final"
+  ];
+  for (const noisy of noisySubstrings) {
+    if (low.includes(noisy)) return false;
+  }
+
+  // 1. Nonfarm Payrolls (Core headline NFP)
+  if (category === "NFP") {
+    return low.includes("non farm payrolls") || low.includes("nonfarm payrolls");
+  }
+
+  // 2. CPI / Core PCE (Primary inflation gauges)
+  if (category === "CPI") {
+    return low === "cpi" || low.includes("core cpi") || low.includes("cpi y/y") || low.includes("cpi m/m") || low.includes("core pce price index");
+  }
+
+  // 3. FOMC / Fed Interest Rate Decisions
+  if (category === "FOMC") {
+    return low.includes("interest rate") || low.includes("fed funds") || low.includes("fomc rate");
+  }
+
+  // 4. ADP Employment Change (Monthly headline)
+  if (category === "ADP") {
+    return low === "adp employment change" || low.includes("adp employment change");
+  }
+
+  return false;
 }
 
 function computeStrength(diff, impactDir, rule) {
@@ -169,7 +206,13 @@ async function fetchAndEvaluate() {
             time: new Date(ev.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
           };
 
-          historyCollector.push(signalPayload);
+          // Strict Focus Filter for History: only primary high-impact market drivers
+          // (Nonfarm Payrolls, CPI, Core PCE Price Index, Fed Interest Rate/FOMC, ADP Employment Change)
+          // Excludes U-6, annual revisions, quarterly projections, minor secondaries.
+          const isFocusHistorical = isFocusHistoryEvent(ev.title || rule.name, rule.category);
+          if (isFocusHistorical) {
+            historyCollector.push(signalPayload);
+          }
 
           if (evTime > newestReleaseTime) {
             newestReleaseTime = evTime;
