@@ -1,4 +1,4 @@
-﻿// Background Service Worker: robust multi-tab state sync, real-time polling, and historical releases
+﻿// Background Service Worker: robust multi-tab state sync, real-time polling, and 120-day historical archive
 const SEEN_EVENTS_KEY = "seen_news_event_ids";
 const LATEST_SIGNAL_KEY = "latest_triggered_signal";
 const UPCOMING_EVENT_KEY = "latest_upcoming_event";
@@ -42,6 +42,8 @@ const INDICATOR_RULES = {
 
 function matchRule(title) {
   const lower = title.toLowerCase();
+  // Filter out Productivity or Revision sub-reports
+  if (lower.includes("productivity") || lower.includes("annual revision")) return null;
   for (const [key, rule] of Object.entries(INDICATOR_RULES)) {
     if (lower.includes(key)) return rule;
   }
@@ -104,8 +106,8 @@ let historicalList = [];
 async function fetchAndEvaluate() {
   try {
     const now = new Date();
-    // Query window: from 14 days ago to 10 days ahead
-    const fromDate = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
+    // 130 days back (~4.5 months) to 10 days ahead
+    const fromDate = new Date(now.getTime() - 130 * 24 * 60 * 60 * 1000).toISOString();
     const toDate = new Date(now.getTime() + 10 * 24 * 60 * 60 * 1000).toISOString();
 
     const url = `https://economic-calendar.tradingview.com/events?from=${fromDate}&to=${toDate}&countries=US`;
@@ -131,7 +133,7 @@ async function fetchAndEvaluate() {
       const evTime = new Date(ev.date).getTime();
       const hasActual = ev.actual !== null && ev.actual !== undefined;
 
-      // 1. Process Released Actual data (Live & Historical)
+      // 1. Process Released Actual data (Live & 4-Month Historical Archive)
       if (hasActual) {
         const actual = parseFloat(ev.actual);
         const hasForecast = ev.forecast !== null && ev.forecast !== undefined;
@@ -150,7 +152,8 @@ async function fetchAndEvaluate() {
             expectedPips: strength.expectedPips,
             badgeColor: strength.badgeColor,
             ratio: strength.ratio.toFixed(1),
-            title: rule.name,
+            title: ev.title || rule.name,
+            ruleName: rule.name,
             category: rule.category,
             unit: rule.unit,
             tier: rule.tier,
@@ -166,13 +169,11 @@ async function fetchAndEvaluate() {
 
           historyCollector.push(signalPayload);
 
-          // Track the most recent release
           if (evTime > newestReleaseTime) {
             newestReleaseTime = evTime;
             newestReleasedSignal = signalPayload;
           }
 
-          // If this is the exact moment it dropped, broadcast high priority
           if (!seen.has(ev.id)) {
             seen.add(ev.id);
             broadcastSignal({
@@ -213,7 +214,8 @@ async function fetchAndEvaluate() {
 
     // Sort history chronologically newest first
     historyCollector.sort((a, b) => b.timestamp - a.timestamp);
-    historicalList = historyCollector.slice(0, 30);
+    // Keep up to 100 entries for deep multi-month history
+    historicalList = historyCollector.slice(0, 100);
 
     // Save state
     await chrome.storage.local.set({
@@ -264,6 +266,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         history: items[HISTORY_EVENTS_KEY] || historicalList
       });
     });
-    return true; // async
+    return true;
   }
 });

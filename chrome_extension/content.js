@@ -1,5 +1,5 @@
 ﻿// Content script: High-detail institutional terminal HUD overlay for TradingView, XM & FBS
-// Clean layout: Upcoming Event with Date, Actual/Forecast/Prior, and Historical Feed with Category Filters
+// Multi-month historical archive (June, July, August, September) with pagination, limits, and surprise delta metrics
 (function() {
   console.log("[News Sniper Terminal] Connected to Live Institutional Economic Feed.");
 
@@ -32,9 +32,9 @@
       top: 24px;
       right: 24px;
       z-index: 2147483647;
-      width: 380px;
-      min-width: 280px;
-      max-width: 640px;
+      width: 410px;
+      min-width: 300px;
+      max-width: 720px;
       background: #0b0e14;
       border: 1px solid #1e293b;
       border-radius: 8px;
@@ -101,11 +101,11 @@
           </div>
         </div>
 
-        <!-- Historical News Archive with Filter Tabs -->
-        <div style="background: #0d1117; border: 1px solid #1e293b; border-radius: 6px; padding: 6px 8px; flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 90px;">
+        <!-- Historical News Archive with Filter Tabs & View Limits -->
+        <div style="background: #0d1117; border: 1px solid #1e293b; border-radius: 6px; padding: 6px 8px; flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 120px;">
           <!-- Filter Tabs -->
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; border-bottom: 1px solid #1c2433; padding-bottom: 4px;">
-            <span style="font-size: 8.5px; font-weight: 800; color: #94a3b8; letter-spacing: 0.5px;">RECENT RELEASES:</span>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; border-bottom: 1px solid #1c2433; padding-bottom: 4px; flex-wrap: wrap; gap: 4px;">
+            <span style="font-size: 8.5px; font-weight: 800; color: #94a3b8; letter-spacing: 0.5px;">HISTORY (4 MONTHS):</span>
             <div id="fn-history-filters" style="display: flex; gap: 3px;">
               <button data-cat="ALL" style="background: #2563eb; color: #ffffff; border: none; border-radius: 3px; font-size: 8px; padding: 2px 5px; cursor: pointer; font-weight: 700;">ALL</button>
               <button data-cat="NFP" style="background: #1e293b; color: #94a3b8; border: none; border-radius: 3px; font-size: 8px; padding: 2px 5px; cursor: pointer;">NFP</button>
@@ -115,14 +115,21 @@
             </div>
           </div>
           <!-- History List Scroll Container -->
-          <div id="fn-history-container" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; padding-right: 2px;">
-            <div style="font-size: 9px; color: #64748b; text-align: center; padding: 6px;">Loading releases...</div>
+          <div id="fn-history-container" style="flex: 1; overflow-y: scroll; display: flex; flex-direction: column; gap: 4px; padding-right: 4px; max-height: 140px;">
+            <div style="font-size: 9px; color: #64748b; text-align: center; padding: 6px;">Loading multi-month releases...</div>
+          </div>
+          <!-- View More / View Limit Footer -->
+          <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #1c2433; padding-top: 4px; margin-top: 4px;">
+            <span id="fn-history-count" style="font-size: 8px; color: #64748b; font-family: monospace;">Showing 5 releases</span>
+            <button id="fn-view-more-btn" style="background: #1e293b; color: #38bdf8; border: 1px solid #334155; border-radius: 3px; font-size: 8px; padding: 2px 8px; cursor: pointer; font-weight: 700;">
+              View More (+5)
+            </button>
           </div>
         </div>
 
         <!-- Live Status Footer -->
         <div style="border-top: 1px solid #18202f; padding-top: 4px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
-          <span id="fn-feed-status" style="font-size: 8px; color: #64748b; font-weight: 500;">Feed: Institutional 1s Live Sync</span>
+          <span id="fn-feed-status" style="font-size: 8px; color: #64748b; font-weight: 500;">Feed: Institutional 1s Live Stream</span>
           <span id="fn-pulse" style="font-size: 8.5px; color: #22c55e; font-weight: 700;">● Active Stream</span>
         </div>
       </div>
@@ -190,25 +197,43 @@
       } catch(e) {}
     }
 
-    // History Storage & Filter Engine
+    // History Pagination, Limit & Render Engine
     let cachedHistory = [];
     let currentFilter = "ALL";
+    let viewLimit = 5; // Default view limit
 
-    function renderHistoryList(filterCat) {
+    function renderHistoryList() {
       const container = document.getElementById("fn-history-container");
+      const countEl = document.getElementById("fn-history-count");
+      const viewMoreBtn = document.getElementById("fn-view-more-btn");
       if (!container) return;
 
       const filtered = cachedHistory.filter(item => {
-        if (filterCat === "ALL") return true;
-        return item.category === filterCat;
+        if (currentFilter === "ALL") return true;
+        return item.category === currentFilter;
       });
 
-      if (filtered.length === 0) {
-        container.innerHTML = `<div style="font-size: 8.5px; color: #64748b; text-align: center; padding: 8px;">No ${filterCat} releases in last 14 days</div>`;
+      const totalFound = filtered.length;
+      const displayItems = filtered.slice(0, viewLimit);
+
+      if (countEl) {
+        countEl.innerText = `Showing ${displayItems.length} of ${totalFound} releases`;
+      }
+
+      if (viewMoreBtn) {
+        if (viewLimit >= totalFound) {
+          viewMoreBtn.innerText = "Show Less (5)";
+        } else {
+          viewMoreBtn.innerText = `View More (+5)`;
+        }
+      }
+
+      if (displayItems.length === 0) {
+        container.innerHTML = `<div style="font-size: 8.5px; color: #64748b; text-align: center; padding: 10px;">No ${currentFilter} releases found in past 4 months</div>`;
         return;
       }
 
-      container.innerHTML = filtered.slice(0, 15).map(item => {
+      container.innerHTML = displayItems.map(item => {
         const isBuy = item.signal && item.signal.includes("BUY");
         const sigColor = isBuy ? "#4ade80" : "#f87171";
         const diffPrefix = item.diff && !item.diff.startsWith("+") && !item.diff.startsWith("-") ? "+" : "";
@@ -217,20 +242,36 @@
         const dateStr = formatShortDateWithTime(gmt2Date);
 
         return `
-          <div style="background: #141a24; padding: 4px 6px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; border-left: 3px solid ${sigColor};">
-            <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 48%;">
-              <div style="font-size: 8.5px; font-weight: 700; color: #f1f5f9; overflow: hidden; text-overflow: ellipsis;">${item.title}</div>
-              <div style="font-size: 7.5px; color: #64748b; font-family: monospace;">${dateStr}</div>
+          <div style="background: #141a24; padding: 5px 7px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; border-left: 3px solid ${sigColor};">
+            <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 44%;">
+              <div style="font-size: 8.5px; font-weight: 700; color: #f1f5f9; overflow: hidden; text-overflow: ellipsis;" title="${item.title}">${item.title}</div>
+              <div style="font-size: 7.5px; color: #94a3b8; font-family: monospace;">${dateStr}</div>
             </div>
-            <div style="font-size: 8px; font-family: monospace; display: flex; gap: 6px; align-items: center;">
+            <div style="font-size: 8px; font-family: monospace; display: flex; gap: 5px; align-items: center; flex-shrink: 0;">
               <span style="color: #ffffff; font-weight: 700;" title="Actual">Act: ${item.actual}${item.unit || ''}</span>
               <span style="color: #38bdf8;" title="Forecast">Est: ${item.forecast}${item.unit || ''}</span>
               <span style="color: #94a3b8;" title="Prior">Pr: ${item.previous}${item.unit || ''}</span>
-              <span style="color: ${sigColor}; font-weight: 800;">[${item.signal.replace(' GOLD', '')}]</span>
+              <span style="color: ${sigColor}; font-weight: 800; background: rgba(255,255,255,0.06); padding: 1px 4px; border-radius: 3px;" title="Surprise Difference">
+                Δ: ${diffPrefix}${item.diff}
+              </span>
             </div>
           </div>
         `;
       }).join("");
+    }
+
+    // View More / Show Less Click Listener
+    const viewMoreBtn = document.getElementById("fn-view-more-btn");
+    if (viewMoreBtn) {
+      viewMoreBtn.addEventListener("click", () => {
+        const filtered = cachedHistory.filter(item => currentFilter === "ALL" || item.category === currentFilter);
+        if (viewLimit >= filtered.length) {
+          viewLimit = 5; // Reset back to default 5
+        } else {
+          viewLimit += 5; // Expand by 5
+        }
+        renderHistoryList();
+      });
     }
 
     // Filter Buttons Wiring
@@ -246,7 +287,8 @@
         btn.style.color = "#ffffff";
         btn.style.fontWeight = "bold";
         currentFilter = btn.getAttribute("data-cat");
-        renderHistoryList(currentFilter);
+        viewLimit = 5; // Reset limit when switching categories
+        renderHistoryList();
       });
     });
 
@@ -365,7 +407,7 @@
       if (resp) {
         if (resp.history && resp.history.length > 0) {
           cachedHistory = resp.history;
-          renderHistoryList(currentFilter);
+          renderHistoryList();
         }
         if (resp.lastSignal) {
           window.renderSniperSignal(resp.lastSignal);
