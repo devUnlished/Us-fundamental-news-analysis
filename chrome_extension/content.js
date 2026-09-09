@@ -1,5 +1,6 @@
-// Content script: High-detail institutional terminal HUD overlay for TradingView, XM & FBS
+﻿// Content script: High-detail institutional terminal HUD overlay for TradingView, XM & FBS
 // Multi-month historical archive (June, July, August, September) with pagination, limits, and surprise delta metrics
+// Strategy Intelligence: Trade Horizon, Hold Time Expectancy, and Scalp/Retracement Trap Warnings
 (function() {
   console.log("[News Sniper Terminal] Connected to Live Institutional Economic Feed.");
 
@@ -32,9 +33,9 @@
       top: 24px;
       right: 24px;
       z-index: 2147483647;
-      width: 410px;
-      min-width: 300px;
-      max-width: 720px;
+      width: 420px;
+      min-width: 310px;
+      max-width: 740px;
       background: #0b0e14;
       border: 1px solid #1e293b;
       border-radius: 8px;
@@ -83,10 +84,21 @@
       <!-- Main Body -->
       <div style="padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; flex: 1; overflow: hidden !important; box-sizing: border-box;">
         <!-- Main Action Banner -->
-        <div id="fn-badge" style="background: #1e293b; border-radius: 6px; padding: 10px 12px; text-align: center; border: 1px solid rgba(255,255,255,0.06); transition: all 0.25s ease; flex-shrink: 0;">
+        <div id="fn-badge" style="background: #1e293b; border-radius: 6px; padding: 9px 12px; text-align: center; border: 1px solid rgba(255,255,255,0.06); transition: all 0.25s ease; flex-shrink: 0;">
           <div id="fn-conviction-tag" style="font-size: clamp(8px, 2vw, 10px); font-weight: 700; letter-spacing: 1px; color: #38bdf8; margin-bottom: 2px;">COUNTDOWN ACTIVE</div>
           <div id="fn-action-text" style="font-size: clamp(13px, 4vw, 18px); font-weight: 900; letter-spacing: 0.5px; color: #f1f5f9; line-height: 1.2;">UPCOMING EVENT LOADED</div>
           <div id="fn-volatility-tag" style="font-size: clamp(8px, 1.8vw, 9.5px); color: #94a3b8; margin-top: 2px;">Tracking pre-release forecast & prior</div>
+        </div>
+
+        <!-- Strategy Intelligence: Trade Horizon & Scalp Warning -->
+        <div id="fn-horizon-card" style="background: #0f141d; border: 1px solid #1e293b; border-radius: 5px; padding: 5px 8px; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center;">
+          <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%;">
+            <div style="font-size: 7.5px; color: #64748b; font-weight: 800; text-transform: uppercase;">Trade Horizon Expectancy</div>
+            <div id="fn-horizon-text" style="font-size: 9px; font-weight: 700; color: #38bdf8;">MACRO TREND: 1 - 4 Hours</div>
+          </div>
+          <div id="fn-horizon-badge" style="font-size: 8px; font-weight: 800; padding: 2px 6px; border-radius: 3px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); flex-shrink: 0;">
+            TREND
+          </div>
         </div>
 
         <!-- Metrics Matrix: ACTUAL | FORECAST | PRIOR -->
@@ -120,7 +132,7 @@
         </div>
 
         <!-- Historical News Archive with Filter Tabs & View Limits -->
-        <div style="background: #0d1117; border: 1px solid #1e293b; border-radius: 6px; padding: 6px 8px; flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 120px;">
+        <div style="background: #0d1117; border: 1px solid #1e293b; border-radius: 6px; padding: 6px 8px; flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 110px;">
           <!-- Filter Tabs -->
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; border-bottom: 1px solid #1c2433; padding-bottom: 4px; flex-wrap: wrap; gap: 4px;">
             <span style="font-size: 8.5px; font-weight: 800; color: #94a3b8; letter-spacing: 0.5px;">HISTORY (4 MONTHS):</span>
@@ -133,7 +145,7 @@
             </div>
           </div>
           <!-- History List Scroll Container: scrollable with 0px invisible scrollbar -->
-          <div id="fn-history-container" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding-right: 0px; max-height: 140px; scrollbar-width: none; -ms-overflow-style: none;">
+          <div id="fn-history-container" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding-right: 0px; max-height: 130px; scrollbar-width: none; -ms-overflow-style: none;">
             <div style="font-size: 9px; color: #64748b; text-align: center; padding: 6px;">Loading multi-month releases...</div>
           </div>
           <!-- View More / View Limit Footer -->
@@ -218,7 +230,7 @@
     // History Pagination, Limit & Render Engine
     let cachedHistory = [];
     let currentFilter = "ALL";
-    let viewLimit = 5; // Default view limit
+    let viewLimit = 5;
 
     function renderHistoryList() {
       const container = document.getElementById("fn-history-container");
@@ -284,9 +296,9 @@
       viewMoreBtn.addEventListener("click", () => {
         const filtered = cachedHistory.filter(item => currentFilter === "ALL" || item.category === currentFilter);
         if (viewLimit >= filtered.length) {
-          viewLimit = 5; // Reset back to default 5
+          viewLimit = 5;
         } else {
-          viewLimit += 5; // Expand by 5
+          viewLimit += 5;
         }
         renderHistoryList();
       });
@@ -305,12 +317,12 @@
         btn.style.color = "#ffffff";
         btn.style.fontWeight = "bold";
         currentFilter = btn.getAttribute("data-cat");
-        viewLimit = 5; // Reset limit when switching categories
+        viewLimit = 5;
         renderHistoryList();
       });
     });
 
-    // Display Upcoming Pre-Release Data (Forecast & Prior + Date)
+    // Display Upcoming Pre-Release Data (Forecast & Prior + Date + Trade Horizon)
     function renderUpcoming(ev) {
       const conviction = document.getElementById("fn-conviction-tag");
       const action = document.getElementById("fn-action-text");
@@ -321,6 +333,8 @@
       const estVal = document.getElementById("fn-est-val");
       const priorVal = document.getElementById("fn-prior-val");
       const diffVal = document.getElementById("fn-diff-val");
+      const horizonText = document.getElementById("fn-horizon-text");
+      const horizonBadge = document.getElementById("fn-horizon-badge");
 
       const evDate = new Date(ev.date);
       const gmt2Date = new Date(evDate.getTime() + (2 * 60 + evDate.getTimezoneOffset()) * 60000);
@@ -328,6 +342,24 @@
 
       action.innerText = ev.title;
       dateEl.innerText = fullDateStr;
+
+      // Update Trade Horizon Expectancy
+      if (ev.horizon) {
+        horizonText.innerText = ev.horizon;
+        if (ev.horizon.includes("SCALP")) {
+          horizonText.style.color = "#f59e0b"; // Warning amber
+          horizonBadge.innerText = "SCALP (15M)";
+          horizonBadge.style.background = "rgba(245, 158, 11, 0.15)";
+          horizonBadge.style.color = "#f59e0b";
+          horizonBadge.style.border = "1px solid rgba(245, 158, 11, 0.3)";
+        } else {
+          horizonText.style.color = "#38bdf8"; // Trend cyan
+          horizonBadge.innerText = "TREND";
+          horizonBadge.style.background = "rgba(56, 189, 248, 0.15)";
+          horizonBadge.style.color = "#38bdf8";
+          horizonBadge.style.border = "1px solid rgba(56, 189, 248, 0.3)";
+        }
+      }
 
       if (ev.isDelayed) {
         conviction.innerText = "AWAITING SOURCE RELEASE (DELAYED)";
@@ -340,7 +372,7 @@
         conviction.style.color = "#38bdf8";
         const hasForecast = ev.hasForecast !== false && ev.forecast !== "N/A" && ev.forecast !== "N/A (Uses Prior)";
         if (hasForecast) {
-          volTag.innerText = `Releasing: ${fullDateStr} • Consensus vs Prior loaded`;
+          volTag.innerText = `Releasing: ${fullDateStr} • ${ev.strategyWarning || 'Consensus vs Prior loaded'}`;
         } else {
           volTag.innerText = `Releasing: ${fullDateStr} • No Wall St. forecast, baseline = Prior`;
         }
@@ -376,6 +408,8 @@
       const estVal = document.getElementById("fn-est-val");
       const priorVal = document.getElementById("fn-prior-val");
       const diffVal = document.getElementById("fn-diff-val");
+      const horizonText = document.getElementById("fn-horizon-text");
+      const horizonBadge = document.getElementById("fn-horizon-badge");
 
       badge.style.backgroundColor = data.badgeColor || "#1e293b";
       badge.style.border = "1px solid rgba(255, 255, 255, 0.25)";
@@ -385,8 +419,26 @@
       conviction.style.color = "#ffffff";
       action.innerText = data.signal;
       action.style.color = "#ffffff";
-      volTag.innerText = `Expected Volatility: ~${data.expectedPips} (${data.benchmarkSource || 'Benchmark'})`;
+      volTag.innerText = `Expected: ~${data.expectedPips} • ${data.strategyWarning || ''}`;
       volTag.style.color = "#ffffff";
+
+      // Update Horizon on live signal
+      if (data.horizon) {
+        horizonText.innerText = data.horizon;
+        if (data.horizon.includes("SCALP")) {
+          horizonText.style.color = "#f59e0b";
+          horizonBadge.innerText = "SCALP (15M)";
+          horizonBadge.style.background = "rgba(245, 158, 11, 0.25)";
+          horizonBadge.style.color = "#fef08a";
+          horizonBadge.style.border = "1px solid #f59e0b";
+        } else {
+          horizonText.style.color = "#4ade80";
+          horizonBadge.innerText = "TREND (HOLD)";
+          horizonBadge.style.background = "rgba(74, 222, 128, 0.25)";
+          horizonBadge.style.color = "#dcfce7";
+          horizonBadge.style.border = "1px solid #4ade80";
+        }
+      }
 
       title.innerText = data.title;
       if (data.date) {

@@ -1,48 +1,48 @@
 ﻿// Background Service Worker: robust multi-tab state sync, real-time polling, and 120-day historical archive
+// Includes Trade Horizon & Impulse Duration Strategy (Macro Trend vs. 15-Min Scalp Trap)
 const SEEN_EVENTS_KEY = "seen_news_event_ids";
 const LATEST_SIGNAL_KEY = "latest_triggered_signal";
 const UPCOMING_EVENT_KEY = "latest_upcoming_event";
 const HISTORY_EVENTS_KEY = "history_news_events";
 
 const INDICATOR_RULES = {
-  // Tier 1: Mega Volatility
-  "non farm payrolls": { dir: 1, name: "Nonfarm Payrolls (NFP)", category: "NFP", tier: 1, unit: "k", stdDev: 35.0 },
-  "nonfarm payrolls": { dir: 1, name: "Nonfarm Payrolls (NFP)", category: "NFP", tier: 1, unit: "k", stdDev: 35.0 },
-  "unemployment rate": { dir: -1, name: "Unemployment Rate", category: "NFP", tier: 1, unit: "%", stdDev: 0.15 },
-  "cpi m/m": { dir: 1, name: "CPI MoM", category: "CPI", tier: 1, unit: "%", stdDev: 0.15 },
-  "cpi y/y": { dir: 1, name: "CPI YoY", category: "CPI", tier: 1, unit: "%", stdDev: 0.2 },
-  "cpi": { dir: 1, name: "Consumer Price Index (CPI)", category: "CPI", tier: 1, unit: "%", stdDev: 0.2 },
-  "core cpi": { dir: 1, name: "Core CPI", category: "CPI", tier: 1, unit: "%", stdDev: 0.15 },
-  "core pce": { dir: 1, name: "Core PCE Price Index", category: "CPI", tier: 1, unit: "%", stdDev: 0.15 },
-  "pce price index": { dir: 1, name: "PCE Price Index", category: "CPI", tier: 2, unit: "%", stdDev: 0.15 },
-  "fed interest rate": { dir: 1, name: "Fed Interest Rate Decision", category: "FOMC", tier: 1, unit: "%", stdDev: 0.25 },
-  "interest rate decision": { dir: 1, name: "Interest Rate Decision", category: "FOMC", tier: 1, unit: "%", stdDev: 0.25 },
-  "fed funds": { dir: 1, name: "Fed Funds Rate", category: "FOMC", tier: 1, unit: "%", stdDev: 0.25 },
-  "fomc": { dir: 1, name: "FOMC Rate / Statement", category: "FOMC", tier: 1, unit: "%", stdDev: 0.25 },
+  // Tier 1: Mega Volatility (Macro Trend: 1 - 4 hours hold)
+  "non farm payrolls": { dir: 1, name: "Nonfarm Payrolls (NFP)", category: "NFP", tier: 1, unit: "k", stdDev: 35.0, horizon: "MACRO TREND: 1 - 4 Hours", warning: "Explosive breakout expected. Look for structural trend continuation." },
+  "nonfarm payrolls": { dir: 1, name: "Nonfarm Payrolls (NFP)", category: "NFP", tier: 1, unit: "k", stdDev: 35.0, horizon: "MACRO TREND: 1 - 4 Hours", warning: "Explosive breakout expected. Look for structural trend continuation." },
+  "unemployment rate": { dir: -1, name: "Unemployment Rate", category: "NFP", tier: 1, unit: "%", stdDev: 0.15, horizon: "MACRO TREND: 1 - 4 Hours", warning: "High impact on Fed interest rate outlook." },
+  "cpi m/m": { dir: 1, name: "CPI MoM", category: "CPI", tier: 1, unit: "%", stdDev: 0.15, horizon: "MACRO TREND: 2 - 6 Hours", warning: "Multi-hour directional leg. Trailing stop recommended." },
+  "cpi y/y": { dir: 1, name: "CPI YoY", category: "CPI", tier: 1, unit: "%", stdDev: 0.2, horizon: "MACRO TREND: 2 - 6 Hours", warning: "Multi-hour directional leg. Trailing stop recommended." },
+  "cpi": { dir: 1, name: "Consumer Price Index (CPI)", category: "CPI", tier: 1, unit: "%", stdDev: 0.2, horizon: "MACRO TREND: 2 - 6 Hours", warning: "Multi-hour directional leg. Trailing stop recommended." },
+  "core cpi": { dir: 1, name: "Core CPI", category: "CPI", tier: 1, unit: "%", stdDev: 0.15, horizon: "MACRO TREND: 2 - 6 Hours", warning: "Multi-hour directional leg. Trailing stop recommended." },
+  "core pce": { dir: 1, name: "Core PCE Price Index", category: "CPI", tier: 1, unit: "%", stdDev: 0.15, horizon: "MACRO TREND: 1 - 3 Hours", warning: "Fed primary inflation gauge. High follow-through." },
+  "pce price index": { dir: 1, name: "PCE Price Index", category: "CPI", tier: 2, unit: "%", stdDev: 0.15, horizon: "SWING MOVE: 45 - 90 Mins", warning: "Watch for retest of pre-news highs/lows." },
+  "fed interest rate": { dir: 1, name: "Fed Interest Rate Decision", category: "FOMC", tier: 1, unit: "%", stdDev: 0.25, horizon: "MAJOR CYCLE: Full Session Trend", warning: "Massive liquidity. High risk of 2-way volatility into Press Conf." },
+  "interest rate decision": { dir: 1, name: "Interest Rate Decision", category: "FOMC", tier: 1, unit: "%", stdDev: 0.25, horizon: "MAJOR CYCLE: Full Session Trend", warning: "Massive liquidity. High risk of 2-way volatility into Press Conf." },
+  "fed funds": { dir: 1, name: "Fed Funds Rate", category: "FOMC", tier: 1, unit: "%", stdDev: 0.25, horizon: "MAJOR CYCLE: Full Session Trend", warning: "Watch Powell speech for true directional run." },
+  "fomc": { dir: 1, name: "FOMC Rate / Statement", category: "FOMC", tier: 1, unit: "%", stdDev: 0.25, horizon: "MAJOR CYCLE: Full Session Trend", warning: "High risk of 2-way whipsaw before clean trend." },
 
-  // Tier 2: High Volatility
-  "retail sales": { dir: 1, name: "Retail Sales", category: "RETAIL", tier: 2, unit: "%", stdDev: 0.3 },
-  "core retail sales": { dir: 1, name: "Core Retail Sales", category: "RETAIL", tier: 2, unit: "%", stdDev: 0.3 },
-  "gdp": { dir: 1, name: "Gross Domestic Product (GDP)", category: "GDP", tier: 2, unit: "%", stdDev: 0.4 },
-  "ism manufacturing": { dir: 1, name: "ISM Manufacturing PMI", category: "PMI", tier: 2, unit: "pts", stdDev: 1.2 },
-  "ism services": { dir: 1, name: "ISM Services PMI", category: "PMI", tier: 2, unit: "pts", stdDev: 1.2 },
-  "ppi": { dir: 1, name: "Producer Price Index (PPI)", category: "PPI", tier: 2, unit: "%", stdDev: 0.2 },
-  "core ppi": { dir: 1, name: "Core PPI", category: "PPI", tier: 2, unit: "%", stdDev: 0.2 },
-  "jolts": { dir: 1, name: "JOLTs Job Openings", category: "NFP", tier: 2, unit: "M", stdDev: 0.25 },
-  "adp employment": { dir: 1, name: "ADP Employment Change", category: "ADP", tier: 2, unit: "k", stdDev: 30.0 },
+  // Tier 2: High Volatility (Swing / Quick Trend: 30 - 60 mins)
+  "retail sales": { dir: 1, name: "Retail Sales", category: "RETAIL", tier: 2, unit: "%", stdDev: 0.3, horizon: "SWING IMPULSE: 30 - 60 Mins", warning: "Clean initial drive. Lock profits at key 15M structure." },
+  "core retail sales": { dir: 1, name: "Core Retail Sales", category: "RETAIL", tier: 2, unit: "%", stdDev: 0.3, horizon: "SWING IMPULSE: 30 - 60 Mins", warning: "Clean initial drive. Lock profits at key 15M structure." },
+  "gdp": { dir: 1, name: "Gross Domestic Product (GDP)", category: "GDP", tier: 2, unit: "%", stdDev: 0.4, horizon: "SWING MOVE: 45 - 90 Mins", warning: "Quarterly revisions determine directional follow-through." },
+  "ism manufacturing": { dir: 1, name: "ISM Manufacturing PMI", category: "PMI", tier: 2, unit: "pts", stdDev: 1.2, horizon: "SWING MOVE: 30 - 60 Mins", warning: "50-level is the critical macro line. Quick reversal risk." },
+  "ism services": { dir: 1, name: "ISM Services PMI", category: "PMI", tier: 2, unit: "pts", stdDev: 1.2, horizon: "SWING MOVE: 30 - 60 Mins", warning: "Major surprise factor in US economy. Watch M15 close." },
+  "ppi": { dir: 1, name: "Producer Price Index (PPI)", category: "PPI", tier: 2, unit: "%", stdDev: 0.2, horizon: "SWING IMPULSE: 20 - 45 Mins", warning: "Leading indicator to CPI. Often retests after initial move." },
+  "core ppi": { dir: 1, name: "Core PPI", category: "PPI", tier: 2, unit: "%", stdDev: 0.2, horizon: "SWING IMPULSE: 20 - 45 Mins", warning: "Leading indicator to CPI. Often retests after initial move." },
+  "jolts": { dir: 1, name: "JOLTs Job Openings", category: "NFP", tier: 2, unit: "M", stdDev: 0.25, horizon: "SWING IMPULSE: 20 - 45 Mins", warning: "Watch for rapid algorithmic scalp reactions." },
+  "adp employment": { dir: 1, name: "ADP Employment Change", category: "ADP", tier: 2, unit: "k", stdDev: 30.0, horizon: "SCALP WARNING: 10 - 15 Mins Quick Impulse", warning: "⚠️ HIGH REVERSAL RISK: Fast initial 15M spike then retraces. Take profit fast!" },
 
-  // Tier 3: Medium-High Volatility
-  "initial jobless claims": { dir: -1, name: "Initial Jobless Claims", category: "CLAIMS", tier: 3, unit: "k", stdDev: 12.0 },
-  "continuing jobless claims": { dir: -1, name: "Continuing Jobless Claims", category: "CLAIMS", tier: 3, unit: "k", stdDev: 25.0 },
-  "consumer sentiment": { dir: 1, name: "UoM Consumer Sentiment", category: "OTHER", tier: 3, unit: "pts", stdDev: 2.0 },
-  "inflation expectations": { dir: 1, name: "Consumer Inflation Expectations", category: "CPI", tier: 3, unit: "%", stdDev: 0.2 },
-  "business optimism": { dir: 1, name: "NFIB Business Optimism", category: "OTHER", tier: 3, unit: "pts", stdDev: 1.5 },
-  "consumer credit": { dir: 1, name: "Consumer Credit Change", category: "OTHER", tier: 3, unit: "B", stdDev: 3.0 }
+  // Tier 3: Scalp-Only (10 - 15 minutes quick spike)
+  "initial jobless claims": { dir: -1, name: "Initial Jobless Claims", category: "CLAIMS", tier: 3, unit: "k", stdDev: 12.0, horizon: "SCALP ONLY: 10 - 20 Mins", warning: "⚠️ Quick spike only (25-45 pips). Often retests pre-news level." },
+  "continuing jobless claims": { dir: -1, name: "Continuing Jobless Claims", category: "CLAIMS", tier: 3, unit: "k", stdDev: 25.0, horizon: "SCALP ONLY: 10 - 20 Mins", warning: "⚠️ Quick impulse. Do not hold through multiple candles." },
+  "consumer sentiment": { dir: 1, name: "UoM Consumer Sentiment", category: "OTHER", tier: 3, unit: "pts", stdDev: 2.0, horizon: "SCALP ONLY: 15 Mins", warning: "⚠️ Fast 15M reaction. Target 20-35 pips maximum." },
+  "inflation expectations": { dir: 1, name: "Consumer Inflation Expectations", category: "CPI", tier: 3, unit: "%", stdDev: 0.2, horizon: "SCALP ONLY: 15 Mins", warning: "⚠️ Fast 15M reaction. Target 20-35 pips maximum." },
+  "business optimism": { dir: 1, name: "NFIB Business Optimism", category: "OTHER", tier: 3, unit: "pts", stdDev: 1.5, horizon: "SCALP ONLY: 15 Mins", warning: "Low institutional trend follow-through." },
+  "consumer credit": { dir: 1, name: "Consumer Credit Change", category: "OTHER", tier: 3, unit: "B", stdDev: 3.0, horizon: "SCALP ONLY: 10 Mins", warning: "Minor late-day volume. Quick scalp only." }
 };
 
 function matchRule(title) {
   const lower = title.toLowerCase();
-  // Filter out Productivity or Revision sub-reports
   if (lower.includes("productivity") || lower.includes("annual revision")) return null;
   for (const [key, rule] of Object.entries(INDICATOR_RULES)) {
     if (lower.includes(key)) return rule;
@@ -157,6 +157,8 @@ async function fetchAndEvaluate() {
             category: rule.category,
             unit: rule.unit,
             tier: rule.tier,
+            horizon: rule.horizon,
+            strategyWarning: rule.warning,
             actual,
             forecast: hasForecast ? benchmark : "None",
             previous,
@@ -203,6 +205,8 @@ async function fetchAndEvaluate() {
               previous: ev.previous !== null && ev.previous !== undefined ? ev.previous : "--",
               unit: rule.unit,
               tier: rule.tier,
+              horizon: rule.horizon,
+              strategyWarning: rule.warning,
               isDelayed: diffToNow < 0,
               delayedMinutes: diffToNow < 0 ? Math.floor(Math.abs(diffToNow) / 60000) : 0,
               timeDiffMs: diffToNow
@@ -214,7 +218,6 @@ async function fetchAndEvaluate() {
 
     // Sort history chronologically newest first
     historyCollector.sort((a, b) => b.timestamp - a.timestamp);
-    // Keep up to 100 entries for deep multi-month history
     historicalList = historyCollector.slice(0, 100);
 
     // Save state
