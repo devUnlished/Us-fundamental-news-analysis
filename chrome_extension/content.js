@@ -1,7 +1,5 @@
-// Content script: High-detail institutional terminal HUD overlay for TradingView, XM & FBS
-// Ordered cleanly: ACTUAL, FORECAST, PRIOR
-// Time display: 24-hour format with AM/PM (e.g., 14:30 PM GMT+2)
-// Scrollbars strictly removed (overflow hidden, seamless responsive scaling)
+﻿// Content script: High-detail institutional terminal HUD overlay for TradingView, XM & FBS
+// Clean layout: Upcoming Event with Date, Actual/Forecast/Prior, and Historical Feed with Category Filters
 (function() {
   console.log("[News Sniper Terminal] Connected to Live Institutional Economic Feed.");
 
@@ -14,12 +12,15 @@
     return `${hours24}:${minutes}:${seconds} ${ampm}`;
   }
 
-  function formatShortTime24WithAmPm(dateObj) {
+  function formatShortDateWithTime(dateObj) {
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const month = months[dateObj.getMonth()];
+    const day = dateObj.getDate();
     const hours = dateObj.getHours();
     const minutes = String(dateObj.getMinutes()).padStart(2, "0");
     const ampm = hours >= 12 ? "PM" : "AM";
     const hours24 = String(hours).padStart(2, "0");
-    return `${hours24}:${minutes} ${ampm}`;
+    return `${month} ${day}, ${hours24}:${minutes} ${ampm}`;
   }
 
   let hud = document.getElementById("fn-sniper-hud");
@@ -31,13 +32,13 @@
       top: 24px;
       right: 24px;
       z-index: 2147483647;
-      width: 360px;
-      min-width: 260px;
-      max-width: 600px;
+      width: 380px;
+      min-width: 280px;
+      max-width: 640px;
       background: #0b0e14;
       border: 1px solid #1e293b;
       border-radius: 8px;
-      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.05);
+      box-shadow: 0 14px 40px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.05);
       color: #e2e8f0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
       resize: both;
@@ -61,7 +62,7 @@
         </div>
       </div>
 
-      <!-- Main Body: No scrollbars allowed -->
+      <!-- Main Body -->
       <div style="padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; flex: 1; overflow: hidden !important; box-sizing: border-box;">
         <!-- Main Action Banner -->
         <div id="fn-badge" style="background: #1e293b; border-radius: 6px; padding: 10px 12px; text-align: center; border: 1px solid rgba(255,255,255,0.06); transition: all 0.25s ease; flex-shrink: 0;">
@@ -72,7 +73,10 @@
 
         <!-- Metrics Matrix: ACTUAL | FORECAST | PRIOR -->
         <div style="flex-shrink: 0;">
-          <div id="fn-event-title" style="font-size: clamp(8.5px, 2.2vw, 10.5px); font-weight: 600; color: #38bdf8; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Querying upcoming US macro event...</div>
+          <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 3px;">
+            <div id="fn-event-title" style="font-size: clamp(8.5px, 2.2vw, 10.5px); font-weight: 700; color: #38bdf8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 65%;">Querying US release...</div>
+            <div id="fn-event-date" style="font-size: 9px; font-weight: 600; color: #f59e0b; font-family: monospace;">Date: --</div>
+          </div>
           <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; background: #0f141d; padding: 6px 8px; border-radius: 6px; border: 1px solid #1e293b;">
             <!-- Column 1: ACTUAL -->
             <div>
@@ -97,10 +101,29 @@
           </div>
         </div>
 
+        <!-- Historical News Archive with Filter Tabs -->
+        <div style="background: #0d1117; border: 1px solid #1e293b; border-radius: 6px; padding: 6px 8px; flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 90px;">
+          <!-- Filter Tabs -->
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; border-bottom: 1px solid #1c2433; padding-bottom: 4px;">
+            <span style="font-size: 8.5px; font-weight: 800; color: #94a3b8; letter-spacing: 0.5px;">RECENT RELEASES:</span>
+            <div id="fn-history-filters" style="display: flex; gap: 3px;">
+              <button data-cat="ALL" style="background: #2563eb; color: #ffffff; border: none; border-radius: 3px; font-size: 8px; padding: 2px 5px; cursor: pointer; font-weight: 700;">ALL</button>
+              <button data-cat="NFP" style="background: #1e293b; color: #94a3b8; border: none; border-radius: 3px; font-size: 8px; padding: 2px 5px; cursor: pointer;">NFP</button>
+              <button data-cat="CPI" style="background: #1e293b; color: #94a3b8; border: none; border-radius: 3px; font-size: 8px; padding: 2px 5px; cursor: pointer;">CPI</button>
+              <button data-cat="ADP" style="background: #1e293b; color: #94a3b8; border: none; border-radius: 3px; font-size: 8px; padding: 2px 5px; cursor: pointer;">ADP</button>
+              <button data-cat="PPI" style="background: #1e293b; color: #94a3b8; border: none; border-radius: 3px; font-size: 8px; padding: 2px 5px; cursor: pointer;">PPI</button>
+            </div>
+          </div>
+          <!-- History List Scroll Container -->
+          <div id="fn-history-container" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; padding-right: 2px;">
+            <div style="font-size: 9px; color: #64748b; text-align: center; padding: 6px;">Loading releases...</div>
+          </div>
+        </div>
+
         <!-- Live Status Footer -->
-        <div style="border-top: 1px solid #18202f; padding-top: 5px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
-          <span style="font-size: 8.5px; color: #64748b; font-weight: 500;">Feed: Institutional Stream</span>
-          <span id="fn-status-indicator" style="font-size: 8.5px; color: #22c55e; font-weight: 600;">● Active Sync</span>
+        <div style="border-top: 1px solid #18202f; padding-top: 4px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
+          <span id="fn-feed-status" style="font-size: 8px; color: #64748b; font-weight: 500;">Feed: Institutional 1s Live Sync</span>
+          <span id="fn-pulse" style="font-size: 8.5px; color: #22c55e; font-weight: 700;">● Active Stream</span>
         </div>
       </div>
     `;
@@ -167,28 +190,89 @@
       } catch(e) {}
     }
 
-    // Display Upcoming Pre-Release Data (Forecast & Prior)
+    // History Storage & Filter Engine
+    let cachedHistory = [];
+    let currentFilter = "ALL";
+
+    function renderHistoryList(filterCat) {
+      const container = document.getElementById("fn-history-container");
+      if (!container) return;
+
+      const filtered = cachedHistory.filter(item => {
+        if (filterCat === "ALL") return true;
+        return item.category === filterCat;
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = `<div style="font-size: 8.5px; color: #64748b; text-align: center; padding: 8px;">No ${filterCat} releases in last 14 days</div>`;
+        return;
+      }
+
+      container.innerHTML = filtered.slice(0, 15).map(item => {
+        const isBuy = item.signal && item.signal.includes("BUY");
+        const sigColor = isBuy ? "#4ade80" : "#f87171";
+        const diffPrefix = item.diff && !item.diff.startsWith("+") && !item.diff.startsWith("-") ? "+" : "";
+        const evDate = new Date(item.date);
+        const gmt2Date = new Date(evDate.getTime() + (2 * 60 + evDate.getTimezoneOffset()) * 60000);
+        const dateStr = formatShortDateWithTime(gmt2Date);
+
+        return `
+          <div style="background: #141a24; padding: 4px 6px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; border-left: 3px solid ${sigColor};">
+            <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 48%;">
+              <div style="font-size: 8.5px; font-weight: 700; color: #f1f5f9; overflow: hidden; text-overflow: ellipsis;">${item.title}</div>
+              <div style="font-size: 7.5px; color: #64748b; font-family: monospace;">${dateStr}</div>
+            </div>
+            <div style="font-size: 8px; font-family: monospace; display: flex; gap: 6px; align-items: center;">
+              <span style="color: #ffffff; font-weight: 700;" title="Actual">Act: ${item.actual}${item.unit || ''}</span>
+              <span style="color: #38bdf8;" title="Forecast">Est: ${item.forecast}${item.unit || ''}</span>
+              <span style="color: #94a3b8;" title="Prior">Pr: ${item.previous}${item.unit || ''}</span>
+              <span style="color: ${sigColor}; font-weight: 800;">[${item.signal.replace(' GOLD', '')}]</span>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    // Filter Buttons Wiring
+    const filterButtons = document.querySelectorAll("#fn-history-filters button");
+    filterButtons.forEach(btn => {
+      btn.addEventListener("click", () => {
+        filterButtons.forEach(b => {
+          b.style.background = "#1e293b";
+          b.style.color = "#94a3b8";
+          b.style.fontWeight = "normal";
+        });
+        btn.style.background = "#2563eb";
+        btn.style.color = "#ffffff";
+        btn.style.fontWeight = "bold";
+        currentFilter = btn.getAttribute("data-cat");
+        renderHistoryList(currentFilter);
+      });
+    });
+
+    // Display Upcoming Pre-Release Data (Forecast & Prior + Date)
     function renderUpcoming(ev) {
       const conviction = document.getElementById("fn-conviction-tag");
       const action = document.getElementById("fn-action-text");
       const volTag = document.getElementById("fn-volatility-tag");
       const title = document.getElementById("fn-event-title");
+      const dateEl = document.getElementById("fn-event-date");
       const actualVal = document.getElementById("fn-actual-val");
       const estVal = document.getElementById("fn-est-val");
       const priorVal = document.getElementById("fn-prior-val");
       const diffVal = document.getElementById("fn-diff-val");
 
       const evDate = new Date(ev.date);
-      // Convert to GMT+2
       const gmt2Date = new Date(evDate.getTime() + (2 * 60 + evDate.getTimezoneOffset()) * 60000);
-      const timeStr = formatShortTime24WithAmPm(gmt2Date) + " GMT+2";
+      const fullDateStr = formatShortDateWithTime(gmt2Date) + " GMT+2";
 
       action.innerText = ev.title;
+      dateEl.innerText = fullDateStr;
 
       if (ev.isDelayed) {
         conviction.innerText = "AWAITING SOURCE RELEASE (DELAYED)";
         conviction.style.color = "#f59e0b";
-        volTag.innerText = `Scheduled ${timeStr} • Agency has not dropped actual yet (${ev.delayedMinutes}m overdue)`;
+        volTag.innerText = `Scheduled ${fullDateStr} • Agency has not dropped actual yet (${ev.delayedMinutes}m overdue)`;
         diffVal.innerText = "WAITING FOR SOURCE";
         diffVal.style.color = "#f59e0b";
       } else {
@@ -196,9 +280,9 @@
         conviction.style.color = "#38bdf8";
         const hasForecast = ev.hasForecast !== false && ev.forecast !== "N/A" && ev.forecast !== "N/A (Uses Prior)";
         if (hasForecast) {
-          volTag.innerText = `Releasing at ${timeStr} • Consensus vs Prior loaded`;
+          volTag.innerText = `Releasing: ${fullDateStr} • Consensus vs Prior loaded`;
         } else {
-          volTag.innerText = `Releasing at ${timeStr} • No Wall St. forecast, baseline = Prior`;
+          volTag.innerText = `Releasing: ${fullDateStr} • No Wall St. forecast, baseline = Prior`;
         }
         diffVal.innerText = "PENDING RELEASE";
         diffVal.style.color = "#64748b";
@@ -213,7 +297,7 @@
         estVal.style.color = "#64748b";
       }
 
-      title.innerText = `Scheduled: ${ev.title} (${timeStr})`;
+      title.innerText = ev.title;
       actualVal.innerText = "AWAITING";
       actualVal.style.color = "#94a3b8";
 
@@ -227,6 +311,7 @@
       const action = document.getElementById("fn-action-text");
       const volTag = document.getElementById("fn-volatility-tag");
       const title = document.getElementById("fn-event-title");
+      const dateEl = document.getElementById("fn-event-date");
       const actualVal = document.getElementById("fn-actual-val");
       const estVal = document.getElementById("fn-est-val");
       const priorVal = document.getElementById("fn-prior-val");
@@ -243,7 +328,15 @@
       volTag.innerText = `Expected Volatility: ~${data.expectedPips} (${data.benchmarkSource || 'Benchmark'})`;
       volTag.style.color = "#ffffff";
 
-      title.innerText = `${data.title} (${data.time || 'NOW'})`;
+      title.innerText = data.title;
+      if (data.date) {
+        const evDate = new Date(data.date);
+        const gmt2Date = new Date(evDate.getTime() + (2 * 60 + evDate.getTimezoneOffset()) * 60000);
+        dateEl.innerText = formatShortDateWithTime(gmt2Date) + " GMT+2";
+      } else {
+        dateEl.innerText = `${data.time || 'NOW'} GMT+2`;
+      }
+
       actualVal.innerText = `${data.actual}${data.unit || ''}`;
       actualVal.style.color = "#ffffff";
 
@@ -267,9 +360,13 @@
       }
     });
 
-    // Request full persistent state on initialization
+    // Request full state (upcoming, last signal, history) on initialization
     chrome.runtime.sendMessage({ type: "GET_STATE" }, (resp) => {
       if (resp) {
+        if (resp.history && resp.history.length > 0) {
+          cachedHistory = resp.history;
+          renderHistoryList(currentFilter);
+        }
         if (resp.lastSignal) {
           window.renderSniperSignal(resp.lastSignal);
         } else if (resp.upcoming) {
