@@ -1,6 +1,5 @@
 ﻿// Content script: High-detail institutional terminal HUD overlay for TradingView, XM & FBS
-// Multi-month historical archive (June, July, August, September) with pagination, limits, and surprise delta metrics
-// Strategy Intelligence: Trade Horizon, Hold Time Expectancy, and Scalp/Retracement Trap Warnings
+// Clean, minimal layout: Upcoming event, Live Metrics, Trade Horizon, and an Expandable/Collapsible History Accordion
 (function() {
   console.log("[News Sniper Terminal] Connected to Live Institutional Economic Feed.");
 
@@ -33,9 +32,9 @@
       top: 24px;
       right: 24px;
       z-index: 2147483647;
-      width: 420px;
-      min-width: 310px;
-      max-width: 740px;
+      width: 370px;
+      min-width: 280px;
+      max-width: 650px;
       background: #0b0e14;
       border: 1px solid #1e293b;
       border-radius: 8px;
@@ -90,13 +89,13 @@
           <div id="fn-volatility-tag" style="font-size: clamp(8px, 1.8vw, 9.5px); color: #94a3b8; margin-top: 2px;">Tracking pre-release forecast & prior</div>
         </div>
 
-        <!-- Strategy Intelligence: Trade Horizon & Scalp Warning -->
-        <div id="fn-horizon-card" style="background: #0f141d; border: 1px solid #1e293b; border-radius: 5px; padding: 5px 8px; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center;">
-          <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%;">
-            <div style="font-size: 7.5px; color: #64748b; font-weight: 800; text-transform: uppercase;">Trade Horizon Expectancy</div>
-            <div id="fn-horizon-text" style="font-size: 9px; font-weight: 700; color: #38bdf8;">MACRO TREND: 1 - 4 Hours</div>
+        <!-- Strategy Intelligence: Trade Horizon -->
+        <div id="fn-horizon-card" style="background: #0f141d; border: 1px solid #1e293b; border-radius: 5px; padding: 4px 8px; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center;">
+          <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 72%;">
+            <div style="font-size: 7px; color: #64748b; font-weight: 800; text-transform: uppercase;">Trade Horizon Expectancy</div>
+            <div id="fn-horizon-text" style="font-size: 8.5px; font-weight: 700; color: #38bdf8;">MACRO TREND: 1 - 4 Hours</div>
           </div>
-          <div id="fn-horizon-badge" style="font-size: 8px; font-weight: 800; padding: 2px 6px; border-radius: 3px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); flex-shrink: 0;">
+          <div id="fn-horizon-badge" style="font-size: 7.5px; font-weight: 800; padding: 2px 5px; border-radius: 3px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); flex-shrink: 0;">
             TREND
           </div>
         </div>
@@ -125,42 +124,49 @@
             </div>
           </div>
           <!-- Surprise Delta Strip -->
-          <div id="fn-delta-strip" style="margin-top: 5px; background: #0f141d; padding: 5px 8px; border-radius: 4px; border: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 8.5px; color: #64748b; font-weight: 600; text-transform: uppercase;">Surprise Delta:</span>
-            <span id="fn-diff-val" style="font-size: 10.5px; font-weight: 800; color: #94a3b8; font-family: monospace;">PENDING RELEASE</span>
+          <div id="fn-delta-strip" style="margin-top: 4px; background: #0f141d; padding: 4px 8px; border-radius: 4px; border: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 8px; color: #64748b; font-weight: 600; text-transform: uppercase;">Surprise Delta:</span>
+            <span id="fn-diff-val" style="font-size: 10px; font-weight: 800; color: #94a3b8; font-family: monospace;">PENDING RELEASE</span>
           </div>
         </div>
 
-        <!-- Historical News Archive with Filter Tabs & View Limits -->
-        <div style="background: #0d1117; border: 1px solid #1e293b; border-radius: 6px; padding: 6px 8px; flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 110px;">
-          <!-- Filter Tabs -->
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; border-bottom: 1px solid #1c2433; padding-bottom: 4px; flex-wrap: wrap; gap: 4px;">
-            <span style="font-size: 8.5px; font-weight: 800; color: #94a3b8; letter-spacing: 0.5px;">HISTORY (4 MONTHS):</span>
-            <div id="fn-history-filters" style="display: flex; gap: 3px;">
-              <button data-cat="ALL" style="background: #2563eb; color: #ffffff; border: none; border-radius: 3px; font-size: 8px; padding: 2px 5px; cursor: pointer; font-weight: 700;">ALL</button>
-              <button data-cat="NFP" style="background: #1e293b; color: #94a3b8; border: none; border-radius: 3px; font-size: 8px; padding: 2px 5px; cursor: pointer;">NFP</button>
-              <button data-cat="CPI" style="background: #1e293b; color: #94a3b8; border: none; border-radius: 3px; font-size: 8px; padding: 2px 5px; cursor: pointer;">CPI</button>
-              <button data-cat="ADP" style="background: #1e293b; color: #94a3b8; border: none; border-radius: 3px; font-size: 8px; padding: 2px 5px; cursor: pointer;">ADP</button>
-              <button data-cat="PPI" style="background: #1e293b; color: #94a3b8; border: none; border-radius: 3px; font-size: 8px; padding: 2px 5px; cursor: pointer;">PPI</button>
+        <!-- Collapsible / Expandable History Accordion Dropdown -->
+        <div id="fn-history-accordion" style="background: #0d1117; border: 1px solid #1e293b; border-radius: 6px; overflow: hidden; flex-shrink: 0;">
+          <!-- Accordion Toggle Header -->
+          <div id="fn-history-toggle" style="padding: 5px 8px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; background: #131922;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span id="fn-accordion-arrow" style="font-size: 9px; color: #38bdf8; transition: transform 0.2s ease;">▶</span>
+              <span style="font-size: 8.5px; font-weight: 700; color: #cbd5e1; letter-spacing: 0.5px;">VIEW PAST RELEASES (4 MONTHS)</span>
             </div>
+            <span id="fn-history-count" style="font-size: 7.5px; color: #64748b; font-family: monospace;">Collapsed</span>
           </div>
-          <!-- History List Scroll Container: scrollable with 0px invisible scrollbar -->
-          <div id="fn-history-container" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding-right: 0px; max-height: 130px; scrollbar-width: none; -ms-overflow-style: none;">
-            <div style="font-size: 9px; color: #64748b; text-align: center; padding: 6px;">Loading multi-month releases...</div>
-          </div>
-          <!-- View More / View Limit Footer -->
-          <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #1c2433; padding-top: 4px; margin-top: 4px;">
-            <span id="fn-history-count" style="font-size: 8px; color: #64748b; font-family: monospace;">Showing 5 releases</span>
-            <button id="fn-view-more-btn" style="background: #1e293b; color: #38bdf8; border: 1px solid #334155; border-radius: 3px; font-size: 8px; padding: 2px 8px; cursor: pointer; font-weight: 700;">
-              View More (+5)
-            </button>
+
+          <!-- Collapsible Content Wrapper (Hidden by default) -->
+          <div id="fn-history-body" style="display: none; padding: 6px 8px; border-top: 1px solid #1e293b; flex-direction: column; gap: 4px;">
+            <!-- Filter Tabs -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
+              <div id="fn-history-filters" style="display: flex; gap: 3px;">
+                <button data-cat="ALL" style="background: #2563eb; color: #ffffff; border: none; border-radius: 3px; font-size: 7.5px; padding: 2px 5px; cursor: pointer; font-weight: 700;">ALL</button>
+                <button data-cat="NFP" style="background: #1e293b; color: #94a3b8; border: none; border-radius: 3px; font-size: 7.5px; padding: 2px 5px; cursor: pointer;">NFP</button>
+                <button data-cat="CPI" style="background: #1e293b; color: #94a3b8; border: none; border-radius: 3px; font-size: 7.5px; padding: 2px 5px; cursor: pointer;">CPI</button>
+                <button data-cat="ADP" style="background: #1e293b; color: #94a3b8; border: none; border-radius: 3px; font-size: 7.5px; padding: 2px 5px; cursor: pointer;">ADP</button>
+                <button data-cat="PPI" style="background: #1e293b; color: #94a3b8; border: none; border-radius: 3px; font-size: 7.5px; padding: 2px 5px; cursor: pointer;">PPI</button>
+              </div>
+              <button id="fn-view-more-btn" style="background: #1e293b; color: #38bdf8; border: 1px solid #334155; border-radius: 3px; font-size: 7.5px; padding: 2px 6px; cursor: pointer; font-weight: 700;">
+                +5 More
+              </button>
+            </div>
+            <!-- History List Scrollbox -->
+            <div id="fn-history-container" style="display: flex; flex-direction: column; gap: 3px; max-height: 120px; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none;">
+              <div style="font-size: 8.5px; color: #64748b; text-align: center; padding: 6px;">Click filters above to view data...</div>
+            </div>
           </div>
         </div>
 
         <!-- Live Status Footer -->
         <div style="border-top: 1px solid #18202f; padding-top: 4px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
           <span id="fn-feed-status" style="font-size: 8px; color: #64748b; font-weight: 500;">Feed: Institutional 1s Live Stream</span>
-          <span id="fn-pulse" style="font-size: 8.5px; color: #22c55e; font-weight: 700;">● Active Stream</span>
+          <span id="fn-pulse" style="font-size: 8px; color: #22c55e; font-weight: 700;">● Active Stream</span>
         </div>
       </div>
     `;
@@ -227,16 +233,36 @@
       } catch(e) {}
     }
 
-    // History Pagination, Limit & Render Engine
+    // History Accordion Toggle Wiring
+    const accordionToggle = document.getElementById("fn-history-toggle");
+    const accordionBody = document.getElementById("fn-history-body");
+    const accordionArrow = document.getElementById("fn-accordion-arrow");
+    const countEl = document.getElementById("fn-history-count");
+    let isAccordionOpen = false;
+
+    accordionToggle.addEventListener("click", () => {
+      isAccordionOpen = !isAccordionOpen;
+      if (isAccordionOpen) {
+        accordionBody.style.display = "flex";
+        accordionArrow.style.transform = "rotate(90deg)";
+        countEl.innerText = "Expanded";
+        renderHistoryList();
+      } else {
+        accordionBody.style.display = "none";
+        accordionArrow.style.transform = "rotate(0deg)";
+        countEl.innerText = "Collapsed";
+      }
+    });
+
+    // History Pagination & Filtering Engine
     let cachedHistory = [];
     let currentFilter = "ALL";
     let viewLimit = 5;
 
     function renderHistoryList() {
       const container = document.getElementById("fn-history-container");
-      const countEl = document.getElementById("fn-history-count");
       const viewMoreBtn = document.getElementById("fn-view-more-btn");
-      if (!container) return;
+      if (!container || !isAccordionOpen) return;
 
       const filtered = cachedHistory.filter(item => {
         if (currentFilter === "ALL") return true;
@@ -246,20 +272,16 @@
       const totalFound = filtered.length;
       const displayItems = filtered.slice(0, viewLimit);
 
-      if (countEl) {
-        countEl.innerText = `Showing ${displayItems.length} of ${totalFound} releases`;
-      }
-
       if (viewMoreBtn) {
         if (viewLimit >= totalFound) {
-          viewMoreBtn.innerText = "Show Less (5)";
+          viewMoreBtn.innerText = "Show 5";
         } else {
-          viewMoreBtn.innerText = `View More (+5)`;
+          viewMoreBtn.innerText = `+5 More`;
         }
       }
 
       if (displayItems.length === 0) {
-        container.innerHTML = `<div style="font-size: 8.5px; color: #64748b; text-align: center; padding: 10px;">No ${currentFilter} releases found in past 4 months</div>`;
+        container.innerHTML = `<div style="font-size: 8px; color: #64748b; text-align: center; padding: 6px;">No ${currentFilter} releases found</div>`;
         return;
       }
 
@@ -272,17 +294,17 @@
         const dateStr = formatShortDateWithTime(gmt2Date);
 
         return `
-          <div style="background: #141a24; padding: 5px 7px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; border-left: 3px solid ${sigColor};">
+          <div style="background: #141a24; padding: 4px 6px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; border-left: 3px solid ${sigColor};">
             <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 44%;">
-              <div style="font-size: 8.5px; font-weight: 700; color: #f1f5f9; overflow: hidden; text-overflow: ellipsis;" title="${item.title}">${item.title}</div>
-              <div style="font-size: 7.5px; color: #94a3b8; font-family: monospace;">${dateStr}</div>
+              <div style="font-size: 8px; font-weight: 700; color: #f1f5f9; overflow: hidden; text-overflow: ellipsis;" title="${item.title}">${item.title}</div>
+              <div style="font-size: 7px; color: #94a3b8; font-family: monospace;">${dateStr}</div>
             </div>
-            <div style="font-size: 8px; font-family: monospace; display: flex; gap: 5px; align-items: center; flex-shrink: 0;">
-              <span style="color: #ffffff; font-weight: 700;" title="Actual">Act: ${item.actual}${item.unit || ''}</span>
-              <span style="color: #38bdf8;" title="Forecast">Est: ${item.forecast}${item.unit || ''}</span>
-              <span style="color: #94a3b8;" title="Prior">Pr: ${item.previous}${item.unit || ''}</span>
-              <span style="color: ${sigColor}; font-weight: 800; background: rgba(255,255,255,0.06); padding: 1px 4px; border-radius: 3px;" title="Surprise Difference">
-                Δ: ${diffPrefix}${item.diff}
+            <div style="font-size: 7.5px; font-family: monospace; display: flex; gap: 4px; align-items: center; flex-shrink: 0;">
+              <span style="color: #ffffff; font-weight: 700;">Act: ${item.actual}${item.unit || ''}</span>
+              <span style="color: #38bdf8;">Est: ${item.forecast}${item.unit || ''}</span>
+              <span style="color: #94a3b8;">Pr: ${item.previous}${item.unit || ''}</span>
+              <span style="color: ${sigColor}; font-weight: 800; background: rgba(255,255,255,0.06); padding: 1px 3px; border-radius: 3px;">
+                Δ:${diffPrefix}${item.diff}
               </span>
             </div>
           </div>
@@ -290,10 +312,11 @@
       }).join("");
     }
 
-    // View More / Show Less Click Listener
+    // View More Click Listener
     const viewMoreBtn = document.getElementById("fn-view-more-btn");
     if (viewMoreBtn) {
-      viewMoreBtn.addEventListener("click", () => {
+      viewMoreBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
         const filtered = cachedHistory.filter(item => currentFilter === "ALL" || item.category === currentFilter);
         if (viewLimit >= filtered.length) {
           viewLimit = 5;
@@ -307,7 +330,8 @@
     // Filter Buttons Wiring
     const filterButtons = document.querySelectorAll("#fn-history-filters button");
     filterButtons.forEach(btn => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
         filterButtons.forEach(b => {
           b.style.background = "#1e293b";
           b.style.color = "#94a3b8";
@@ -322,7 +346,7 @@
       });
     });
 
-    // Display Upcoming Pre-Release Data (Forecast & Prior + Date + Trade Horizon)
+    // Display Upcoming Pre-Release Data
     function renderUpcoming(ev) {
       const conviction = document.getElementById("fn-conviction-tag");
       const action = document.getElementById("fn-action-text");
@@ -343,17 +367,16 @@
       action.innerText = ev.title;
       dateEl.innerText = fullDateStr;
 
-      // Update Trade Horizon Expectancy
       if (ev.horizon) {
         horizonText.innerText = ev.horizon;
         if (ev.horizon.includes("SCALP")) {
-          horizonText.style.color = "#f59e0b"; // Warning amber
+          horizonText.style.color = "#f59e0b";
           horizonBadge.innerText = "SCALP (15M)";
           horizonBadge.style.background = "rgba(245, 158, 11, 0.15)";
           horizonBadge.style.color = "#f59e0b";
           horizonBadge.style.border = "1px solid rgba(245, 158, 11, 0.3)";
         } else {
-          horizonText.style.color = "#38bdf8"; // Trend cyan
+          horizonText.style.color = "#38bdf8";
           horizonBadge.innerText = "TREND";
           horizonBadge.style.background = "rgba(56, 189, 248, 0.15)";
           horizonBadge.style.color = "#38bdf8";
@@ -422,7 +445,6 @@
       volTag.innerText = `Expected: ~${data.expectedPips} • ${data.strategyWarning || ''}`;
       volTag.style.color = "#ffffff";
 
-      // Update Horizon on live signal
       if (data.horizon) {
         horizonText.innerText = data.horizon;
         if (data.horizon.includes("SCALP")) {
@@ -472,12 +494,11 @@
       }
     });
 
-    // Request full state (upcoming, last signal, history) on initialization
+    // Request full state on initialization
     chrome.runtime.sendMessage({ type: "GET_STATE" }, (resp) => {
       if (resp) {
         if (resp.history && resp.history.length > 0) {
           cachedHistory = resp.history;
-          renderHistoryList();
         }
         if (resp.lastSignal) {
           window.renderSniperSignal(resp.lastSignal);
