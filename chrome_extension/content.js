@@ -1,4 +1,4 @@
-﻿// Content script: High-detail institutional terminal HUD overlay for TradingView, XM & FBS
+// Content script: High-detail institutional terminal HUD overlay for TradingView, XM & FBS
 // Multi-month historical archive (June, July, August, September) with pagination, limits, and surprise delta metrics
 (function() {
   console.log("[News Sniper Terminal] Connected to Live Institutional Economic Feed.");
@@ -48,6 +48,24 @@
       flex-direction: column;
       box-sizing: border-box;
     `;
+
+    // Inject scrollbar-hiding CSS rule once
+    if (!document.getElementById("fn-sniper-styles")) {
+      const styleEl = document.createElement("style");
+      styleEl.id = "fn-sniper-styles";
+      styleEl.textContent = `
+        #fn-sniper-hud *::-webkit-scrollbar {
+          display: none !important;
+          width: 0px !important;
+          height: 0px !important;
+        }
+        #fn-sniper-hud * {
+          -ms-overflow-style: none !important;
+          scrollbar-width: none !important;
+        }
+      `;
+      document.head.appendChild(styleEl);
+    }
 
     hud.innerHTML = `
       <!-- Draggable Header -->
@@ -114,8 +132,8 @@
               <button data-cat="PPI" style="background: #1e293b; color: #94a3b8; border: none; border-radius: 3px; font-size: 8px; padding: 2px 5px; cursor: pointer;">PPI</button>
             </div>
           </div>
-          <!-- History List Scroll Container -->
-          <div id="fn-history-container" style="flex: 1; overflow-y: scroll; display: flex; flex-direction: column; gap: 4px; padding-right: 4px; max-height: 140px;">
+          <!-- History List Scroll Container: scrollable with 0px invisible scrollbar -->
+          <div id="fn-history-container" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding-right: 0px; max-height: 140px; scrollbar-width: none; -ms-overflow-style: none;">
             <div style="font-size: 9px; color: #64748b; text-align: center; padding: 6px;">Loading multi-month releases...</div>
           </div>
           <!-- View More / View Limit Footer -->
