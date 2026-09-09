@@ -1,4 +1,4 @@
-﻿// Content script: High-detail institutional terminal HUD overlay for TradingView, XM & FBS
+// Content script: High-detail institutional terminal HUD overlay for TradingView, XM & FBS
 // Ordered cleanly: ACTUAL, FORECAST, PRIOR
 // Time display: 24-hour format with AM/PM (e.g., 14:30 PM GMT+2)
 // Scrollbars strictly removed (overflow hidden, seamless responsive scaling)
@@ -261,14 +261,14 @@
     // Live Message Listener from background worker
     chrome.runtime.onMessage.addListener((msg) => {
       if (msg.type === "NEWS_SIGNAL") {
-        window.renderSniperSignal(msg);
+        window.renderSniperSignal(msg.data || msg);
       } else if (msg.type === "UPCOMING_EVENT") {
         renderUpcoming(msg.data);
       }
     });
 
-    // Request upcoming event state or last signal on initialization
-    chrome.runtime.sendMessage({ type: "GET_UPCOMING_EVENT" }, (resp) => {
+    // Request full persistent state on initialization
+    chrome.runtime.sendMessage({ type: "GET_STATE" }, (resp) => {
       if (resp) {
         if (resp.lastSignal) {
           window.renderSniperSignal(resp.lastSignal);

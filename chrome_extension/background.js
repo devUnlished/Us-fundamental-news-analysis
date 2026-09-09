@@ -1,6 +1,7 @@
-﻿// Background Service Worker: polls calendar API, tracks upcoming releases (Forecast/Prior)
-// and evaluates deviation magnitude the instant the Actual number drops.
+﻿// Background Service Worker: robust multi-tab state sync and real-time news polling
 const SEEN_EVENTS_KEY = "seen_news_event_ids";
+const LATEST_SIGNAL_KEY = "latest_triggered_signal";
+const UPCOMING_EVENT_KEY = "latest_upcoming_event";
 
 const INDICATOR_RULES = {
   // Tier 1: Mega Volatility
@@ -32,7 +33,8 @@ const INDICATOR_RULES = {
   "initial jobless claims": { dir: -1, name: "Initial Jobless Claims", tier: 3, unit: "k", stdDev: 12.0 },
   "consumer sentiment": { dir: 1, name: "UoM Consumer Sentiment", tier: 3, unit: "pts", stdDev: 2.0 },
   "inflation expectations": { dir: 1, name: "Consumer Inflation Expectations", tier: 3, unit: "%", stdDev: 0.2 },
-  "business optimism": { dir: 1, name: "NFIB Business Optimism", tier: 3, unit: "pts", stdDev: 1.5 }
+  "business optimism": { dir: 1, name: "NFIB Business Optimism", tier: 3, unit: "pts", stdDev: 1.5 },
+  "consumer credit": { dir: 1, name: "Consumer Credit Change", tier: 3, unit: "B", stdDev: 3.0 }
 };
 
 function matchRule(title) {
@@ -92,28 +94,30 @@ function computeStrength(diff, impactDir, rule) {
   return { signalAction, convictionLevel, expectedPips, badgeColor, ratio };
 }
 
-let latestUpcomingEvent = null;
-let lastTriggeredSignal = null;
-
 async function fetchAndEvaluate() {
   try {
     const now = new Date();
-    // Query window: from 2 hours ago to 7 days ahead
-    const fromDate = new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString();
+    // Query window: from 24 hours ago to 7 days ahead
+    const fromDate = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
     const toDate = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
     const url = `https://economic-calendar.tradingview.com/events?from=${fromDate}&to=${toDate}&countries=US`;
     const resp = await fetch(url, { headers: { "Origin": "https://www.tradingview.com" } });
-    if (!resp.ok) return;
+    if (!resp.ok) {
+      console.warn("[News Sniper] Fetch failed:", resp.status);
+      return;
+    }
 
     const data = await resp.json();
     const events = data.result || [];
 
-    const storage = await chrome.storage.local.get([SEEN_EVENTS_KEY]);
+    const storage = await chrome.storage.local.get([SEEN_EVENTS_KEY, LATEST_SIGNAL_KEY]);
     const seen = new Set(storage[SEEN_EVENTS_KEY] || []);
 
     let closestUpcoming = null;
     let closestTimeDiff = Infinity;
+    let newestReleasedSignal = null;
+    let newestReleaseTime = 0;
 
     for (const ev of events) {
       const rule = matchRule(ev.title || "");
@@ -122,7 +126,7 @@ async function fetchAndEvaluate() {
       const evTime = new Date(ev.date).getTime();
       const hasActual = ev.actual !== null && ev.actual !== undefined;
 
-      // 1. Check for newly released Actual data
+      // 1. Process Released Actual data
       if (hasActual) {
         const actual = parseFloat(ev.actual);
         const hasForecast = ev.forecast !== null && ev.forecast !== undefined;
@@ -135,7 +139,7 @@ async function fetchAndEvaluate() {
           const strength = computeStrength(diff, rule.dir, rule);
 
           const signalPayload = {
-            type: "NEWS_SIGNAL",
+            id: ev.id,
             signal: strength.signalAction,
             conviction: strength.convictionLevel,
             expectedPips: strength.expectedPips,
@@ -149,23 +153,32 @@ async function fetchAndEvaluate() {
             previous,
             benchmarkSource,
             diff: (diff > 0 ? "+" : "") + diff.toFixed(2),
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+            timestamp: evTime,
+            time: new Date(ev.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
           };
 
-          lastTriggeredSignal = signalPayload;
+          // Track the most recent release
+          if (evTime > newestReleaseTime) {
+            newestReleaseTime = evTime;
+            newestReleasedSignal = signalPayload;
+          }
 
+          // If this is the exact moment it dropped, broadcast high priority
           if (!seen.has(ev.id)) {
             seen.add(ev.id);
-            broadcastSignal(signalPayload);
+            broadcastSignal({
+              type: "NEWS_SIGNAL",
+              data: signalPayload
+            });
+            await chrome.storage.local.set({ [LATEST_SIGNAL_KEY]: signalPayload });
           }
         }
       }
 
       // 2. Track upcoming events where actual is not yet released
-      // Include overdue events that passed within the last 45 minutes where the agency delayed publishing the Actual
       if (!hasActual) {
         const diffToNow = evTime - now.getTime();
-        // Allow up to 45 minutes past scheduled time before moving to next event
+        // Look ahead or allow up to 45 minutes delayed
         if (diffToNow >= -45 * 60 * 1000) {
           const sortMetric = Math.abs(diffToNow);
           if (sortMetric < closestTimeDiff) {
@@ -189,12 +202,17 @@ async function fetchAndEvaluate() {
       }
     }
 
+    // Save latest upcoming and state
     if (closestUpcoming) {
-      latestUpcomingEvent = closestUpcoming;
+      await chrome.storage.local.set({ [UPCOMING_EVENT_KEY]: closestUpcoming });
       broadcastSignal({
         type: "UPCOMING_EVENT",
         data: closestUpcoming
       });
+    }
+
+    if (newestReleasedSignal) {
+      await chrome.storage.local.set({ [LATEST_SIGNAL_KEY]: newestReleasedSignal });
     }
 
     await chrome.storage.local.set({ [SEEN_EVENTS_KEY]: Array.from(seen) });
@@ -213,13 +231,19 @@ function broadcastSignal(payload) {
   });
 }
 
-// Check every 2 seconds
-setInterval(fetchAndEvaluate, 2000);
+// Regular polling every 1 second
+setInterval(fetchAndEvaluate, 1000);
 fetchAndEvaluate();
 
-// When a tab opens or requests initial state, send latest upcoming or signal
+// Respond immediately with persisted storage when any tab loads
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === "GET_UPCOMING_EVENT") {
-    sendResponse({ upcoming: latestUpcomingEvent, lastSignal: lastTriggeredSignal });
+  if (msg.type === "GET_STATE") {
+    chrome.storage.local.get([UPCOMING_EVENT_KEY, LATEST_SIGNAL_KEY], (items) => {
+      sendResponse({
+        upcoming: items[UPCOMING_EVENT_KEY] || null,
+        lastSignal: items[LATEST_SIGNAL_KEY] || null
+      });
+    });
+    return true; // async sendResponse
   }
 });
