@@ -44,8 +44,10 @@ const INDICATOR_RULES = {
 function matchRule(title) {
   const lower = title.toLowerCase();
   if (lower.includes("productivity") || lower.includes("annual revision") || lower.includes("u-6")) return null;
-  for (const [key, rule] of Object.entries(INDICATOR_RULES)) {
-    if (lower.includes(key)) return rule;
+  // Sort keys by descending length so specific terms ("core ppi", "core cpi") match before general ones ("ppi", "cpi")
+  const sortedKeys = Object.keys(INDICATOR_RULES).sort((a, b) => b.length - a.length);
+  for (const key of sortedKeys) {
+    if (lower.includes(key)) return INDICATOR_RULES[key];
   }
   return null;
 }
@@ -269,18 +271,42 @@ async function fetchAndEvaluate() {
       [SEEN_EVENTS_KEY]: Array.from(seen)
     });
 
-    if (closestUpcoming) {
-      latestUpcomingEvent = closestUpcoming;
-      await chrome.storage.local.set({ [UPCOMING_EVENT_KEY]: closestUpcoming });
-      broadcastSignal({
-        type: "UPCOMING_EVENT",
-        data: closestUpcoming
-      });
-    }
-
+    // 3. Trade Horizon Active Window Engine:
+    // When a news signal releases, keep it displayed on the main card for the duration of its
+    // suggested trade horizon (or minimum 20 minutes) so the trader has time to execute and manage the move.
+    // Do NOT prematurely overwrite it with the next upcoming event.
+    let isSignalActiveInHorizon = false;
     if (newestReleasedSignal) {
       lastTriggeredSignal = newestReleasedSignal;
       await chrome.storage.local.set({ [LATEST_SIGNAL_KEY]: newestReleasedSignal });
+
+      // Calculate expiry based on rule.horizon (e.g. 15m, 30m, 45m, 1-4h)
+      let activeHorizonMs = 30 * 60 * 1000; // default 30 mins
+      const hor = (newestReleasedSignal.horizon || "").toUpperCase();
+      if (hor.includes("10 - 15") || hor.includes("15 MIN")) {
+        activeHorizonMs = 15 * 60 * 1000;
+      } else if (hor.includes("20 - 45") || hor.includes("30 - 60")) {
+        activeHorizonMs = 45 * 60 * 1000;
+      } else if (hor.includes("1 - 4") || hor.includes("2 - 6") || hor.includes("MAJOR CYCLE")) {
+        activeHorizonMs = 90 * 60 * 1000; // 90 minutes hold for Tier 1 macro trends
+      }
+
+      const elapsedSinceRelease = now.getTime() - newestReleasedSignal.timestamp;
+      if (elapsedSinceRelease >= 0 && elapsedSinceRelease < activeHorizonMs) {
+        isSignalActiveInHorizon = true;
+      }
+    }
+
+    if (closestUpcoming) {
+      latestUpcomingEvent = closestUpcoming;
+      await chrome.storage.local.set({ [UPCOMING_EVENT_KEY]: closestUpcoming });
+      // Only broadcast upcoming event if no active signal is currently within its trading horizon window
+      if (!isSignalActiveInHorizon) {
+        broadcastSignal({
+          type: "UPCOMING_EVENT",
+          data: closestUpcoming
+        });
+      }
     }
 
   } catch (err) {

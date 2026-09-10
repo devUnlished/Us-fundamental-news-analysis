@@ -509,10 +509,31 @@
         if (resp.history && resp.history.length > 0) {
           cachedHistory = resp.history;
         }
-        if (resp.lastSignal) {
+
+        // Determine whether lastSignal is still active within its suggested trade horizon
+        let isSignalStillActive = false;
+        if (resp.lastSignal && resp.lastSignal.timestamp) {
+          let horizonMs = 30 * 60 * 1000;
+          const hor = (resp.lastSignal.horizon || "").toUpperCase();
+          if (hor.includes("10 - 15") || hor.includes("15 MIN")) {
+            horizonMs = 15 * 60 * 1000;
+          } else if (hor.includes("20 - 45") || hor.includes("30 - 60")) {
+            horizonMs = 45 * 60 * 1000;
+          } else if (hor.includes("1 - 4") || hor.includes("2 - 6") || hor.includes("MAJOR CYCLE")) {
+            horizonMs = 90 * 60 * 1000;
+          }
+          const elapsed = Date.now() - resp.lastSignal.timestamp;
+          if (elapsed >= 0 && elapsed < horizonMs) {
+            isSignalStillActive = true;
+          }
+        }
+
+        if (resp.lastSignal && isSignalStillActive) {
           window.renderSniperSignal(resp.lastSignal);
         } else if (resp.upcoming) {
           renderUpcoming(resp.upcoming);
+        } else if (resp.lastSignal) {
+          window.renderSniperSignal(resp.lastSignal);
         }
       }
     });
