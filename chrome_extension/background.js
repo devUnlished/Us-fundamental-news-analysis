@@ -135,7 +135,24 @@ function computeStrength(diff, impactDir, rule) {
     }
   }
 
-  return { signalAction, convictionLevel, expectedPips, badgeColor, ratio };
+  // Institutional Playbook Guidance:
+  // 1. Hold vs Scalp based on statistical surprise deviation ratio
+  // 2. Liquidity Sweep Targets & Take Profit zones (e.g. key psychological round numbers)
+  let surpriseGuidance = "NORMAL MOVE";
+  let sweepGuidance = "Take partial profit at next major round number";
+
+  if (ratio >= 2.0) {
+    surpriseGuidance = "🔥 EXTREME BLOWOUT: Heavy institutional re-pricing. Trend continuation favored. Trailing stop recommended.";
+    sweepGuidance = "🎯 SWEEP TARGET: Watch for multi-leg run (150-300+ pips). Lock 50% at first major swing extreme.";
+  } else if (ratio >= 1.0) {
+    surpriseGuidance = "⚡ SOLID SURPRISE: Trend continuation likely. Protect breakeven after 40-50 pips.";
+    sweepGuidance = "🎯 SWEEP TARGET: Major liquidity zone / nearest 50-pip round number. Take 70% off at retest.";
+  } else {
+    surpriseGuidance = "⚠️ MODEST SURPRISE (SLIGHT DEVIATION): High reversal risk! Scalp impulse only, do NOT marry position.";
+    sweepGuidance = "🎯 SWEEP & REVERSE TARGET: Watch for V-shape rebound at key round number ($20-$40 move). Lock 80% fast!";
+  }
+
+  return { signalAction, convictionLevel, expectedPips, badgeColor, ratio, surpriseGuidance, sweepGuidance };
 }
 
 let latestUpcomingEvent = null;
@@ -198,6 +215,8 @@ async function fetchAndEvaluate() {
             tier: rule.tier,
             horizon: rule.horizon,
             strategyWarning: rule.warning,
+            surpriseGuidance: strength.surpriseGuidance,
+            sweepGuidance: strength.sweepGuidance,
             actual,
             forecast: hasForecast ? benchmark : "None",
             previous,

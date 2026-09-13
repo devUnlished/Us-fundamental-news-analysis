@@ -128,6 +128,15 @@
             <span style="font-size: 8px; color: #64748b; font-weight: 600; text-transform: uppercase;">Surprise Delta:</span>
             <span id="fn-diff-val" style="font-size: 10px; font-weight: 800; color: #94a3b8; font-family: monospace;">PENDING RELEASE</span>
           </div>
+          <!-- Institutional Playbook: Hold/Scalp & Liquidity Sweep TP Targets -->
+          <div id="fn-playbook-box" style="margin-top: 4px; background: #131922; padding: 5px 8px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.2); display: flex; flex-direction: column; gap: 2px;">
+            <div id="fn-surprise-guide" style="font-size: 8px; font-weight: 700; color: #cbd5e1; line-height: 1.3;">
+              ⚖️ GUIDANCE: Awaiting release to compute hold vs scalp bias...
+            </div>
+            <div id="fn-sweep-guide" style="font-size: 8px; font-weight: 700; color: #f59e0b; line-height: 1.3;">
+              🎯 LIQUIDITY TARGET: Watch nearest $10-$20 round number for sweep & take profit.
+            </div>
+          </div>
         </div>
 
         <!-- Collapsible / Expandable History Accordion Dropdown -->
@@ -426,6 +435,17 @@
       actualVal.style.color = "#94a3b8";
 
       priorVal.innerText = `${ev.previous}${ev.unit || ''}`;
+
+      const surpriseGuideEl = document.getElementById("fn-surprise-guide");
+      const sweepGuideEl = document.getElementById("fn-sweep-guide");
+      if (surpriseGuideEl) {
+        surpriseGuideEl.innerText = "⚖️ PLAYBOOK: Waiting for actual release to evaluate hold vs scalp deviation...";
+        surpriseGuideEl.style.color = "#cbd5e1";
+      }
+      if (sweepGuideEl) {
+        sweepGuideEl.innerText = "🎯 LIQUIDITY TARGET: Nearest round numbers ($10-$20) are prime take-profit liquidity zones.";
+        sweepGuideEl.style.color = "#f59e0b";
+      }
     }
 
     // Render Triggered Signal When Actual Drops
@@ -442,6 +462,8 @@
       const diffVal = document.getElementById("fn-diff-val");
       const horizonText = document.getElementById("fn-horizon-text");
       const horizonBadge = document.getElementById("fn-horizon-badge");
+      const surpriseGuideEl = document.getElementById("fn-surprise-guide");
+      const sweepGuideEl = document.getElementById("fn-sweep-guide");
 
       badge.style.backgroundColor = data.badgeColor || "#1e293b";
       badge.style.border = "1px solid rgba(255, 255, 255, 0.25)";
@@ -469,6 +491,18 @@
           horizonBadge.style.color = "#dcfce7";
           horizonBadge.style.border = "1px solid #4ade80";
         }
+      }
+
+      // Institutional Playbook: Hold vs Scalp Guidance
+      if (surpriseGuideEl) {
+        surpriseGuideEl.innerText = data.surpriseGuidance || "⚖️ PLAYBOOK: Manage risk actively around structural extremes.";
+        surpriseGuideEl.style.color = data.ratio >= 2.0 ? "#f87171" : (data.ratio >= 1.0 ? "#38bdf8" : "#fbbf24");
+      }
+
+      // Liquidity Sweep Take Profit Zones
+      if (sweepGuideEl) {
+        sweepGuideEl.innerText = data.sweepGuidance || "🎯 SWEEP TARGET: Next round number ($10-$20) is primary liquidity pool.";
+        sweepGuideEl.style.color = "#4ade80";
       }
 
       title.innerText = data.title;
