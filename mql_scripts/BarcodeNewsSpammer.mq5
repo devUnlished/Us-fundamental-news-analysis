@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "News Sniper Terminal"
 #property link      "https://github.com/devUnlished/Us-fundamental-news-analysis"
-#property version   "1.00"
+#property version   "1.10"
 
 #include <Trade\Trade.mqh>
 
@@ -17,14 +17,26 @@ input int      InpStopLossPips      = 40;      // Stop Loss in pips
 input int      InpTakeProfitPips    = 80;      // Take Profit in pips
 input ulong    InpMagicNumber       = 888111;  // Magic number
 
+input group "=== LETTER HOTKEYS (NO F-KEYS) ===";
+input string   InpSellKey           = "S";     // Hotkey for SELL Barcode
+input string   InpBuyKey            = "B";     // Hotkey for BUY Barcode
+
 CTrade trade;
+int g_sellKeyCode = 83; // 'S'
+int g_buyKeyCode  = 66; // 'B'
 
 int OnInit()
 {
    trade.SetExpertMagicNumber(InpMagicNumber);
    trade.SetDeviationInPoints(InpSlippagePoints);
    trade.SetTypeFilling(ORDER_FILLING_IOC);
-   Print(">>> BARCODE NEWS SPAMMER LOADED. Press F7 for BUY Barcode, F8 for SELL Barcode <<<");
+
+   string s = InpSellKey; StringToUpper(s);
+   string b = InpBuyKey;  StringToUpper(b);
+   if(StringLen(s) > 0) g_sellKeyCode = (int)StringGetCharacter(s, 0);
+   if(StringLen(b) > 0) g_buyKeyCode  = (int)StringGetCharacter(b, 0);
+
+   PrintFormat(">>> BARCODE NEWS SPAMMER LOADED. Press '%s' for BUY Barcode, '%s' for SELL Barcode <<<", b, s);
    return(INIT_SUCCEEDED);
 }
 
@@ -32,14 +44,14 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
 {
    if(id == CHARTEVENT_KEYDOWN)
    {
-      if(lparam == 119) // F8 key -> BARCODE SELL
+      if(lparam == g_sellKeyCode) // Default: 'S'
       {
-         PrintFormat("🔥 EXECUTING SELL BARCODE: Spreading %d orders of %.2f lots...", InpNumberOfOrders, InpLotPerStripe);
+         PrintFormat("🔥 HOTKEY '%s' PRESSED: Spreading %d SELL orders of %.2f lots...", InpSellKey, InpNumberOfOrders, InpLotPerStripe);
          ExecuteBarcode(ORDER_TYPE_SELL);
       }
-      else if(lparam == 118) // F7 key -> BARCODE BUY
+      else if(lparam == g_buyKeyCode) // Default: 'B'
       {
-         PrintFormat("🔥 EXECUTING BUY BARCODE: Spreading %d orders of %.2f lots...", InpNumberOfOrders, InpLotPerStripe);
+         PrintFormat("🔥 HOTKEY '%s' PRESSED: Spreading %d BUY orders of %.2f lots...", InpBuyKey, InpNumberOfOrders, InpLotPerStripe);
          ExecuteBarcode(ORDER_TYPE_BUY);
       }
    }
@@ -79,7 +91,7 @@ void ExecuteBarcode(ENUM_ORDER_TYPE orderType)
             filled++;
          }
       }
-      Sleep(20); // 20ms micro-stagger to bypass broker flood throttle
+      Sleep(20); // 20ms micro-stagger
    }
 
    string msg = StringFormat("BARCODE COMPLETE: %d/%d stripes filled on %s!", filled, InpNumberOfOrders, _Symbol);

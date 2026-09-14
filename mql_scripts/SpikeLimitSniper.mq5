@@ -6,7 +6,7 @@
 //+------------------------------------------------------------------+
 #property copyright "News Sniper Terminal"
 #property link      "https://github.com/devUnlished/Us-fundamental-news-analysis"
-#property version   "1.00"
+#property version   "1.10"
 
 #include <Trade\Trade.mqh>
 
@@ -27,9 +27,15 @@ input group "=== EXECUTION MODE ===";
 input bool     InpAutoTradeNews     = true;    // True = Auto-trade built-in calendar releases
 input ulong    InpMagicNumber       = 777999;  // Magic number for sniper orders
 
+input group "=== LETTER HOTKEYS (NO F-KEYS) ===";
+input string   InpSellLimitKey      = "L";     // Hotkey to arm 80% SELL LIMITS
+input string   InpBuyLimitKey       = "K";     // Hotkey to arm 80% BUY LIMITS
+
 CTrade trade;
 datetime g_lastEvaluatedTime = 0;
 string g_lastEventId = "";
+int g_sellLimitKeyCode = 76; // 'L'
+int g_buyLimitKeyCode  = 75; // 'K'
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -39,7 +45,14 @@ int OnInit()
    trade.SetExpertMagicNumber(InpMagicNumber);
    trade.SetTypeFilling(ORDER_FILLING_IOC);
    EventSetTimer(1);
-   Print(">>> SPIKE LIMIT SNIPER LOADED ON ", _Symbol, " | Margin Sizing: ", InpMarginUsePercent, "% <<<");
+
+   string s = InpSellLimitKey; StringToUpper(s);
+   string b = InpBuyLimitKey;  StringToUpper(b);
+   if(StringLen(s) > 0) g_sellLimitKeyCode = (int)StringGetCharacter(s, 0);
+   if(StringLen(b) > 0) g_buyLimitKeyCode  = (int)StringGetCharacter(b, 0);
+
+   PrintFormat(">>> SPIKE LIMIT SNIPER LOADED ON %s | Margin: %.1f%% | Hotkeys: '%s'=Sell Limits, '%s'=Buy Limits <<<",
+               _Symbol, InpMarginUsePercent, s, b);
    return(INIT_SUCCEEDED);
 }
 
@@ -93,8 +106,7 @@ void OnTimer()
          double usdImpact = diff * direction;
          g_lastEventId = evKey;
 
-         // Determine surprise magnitude (modest vs solid)
-         bool isModest = (MathAbs(diff) < 0.25); // Relative threshold
+         bool isModest = (MathAbs(diff) < 0.25);
          int spikePips = isModest ? InpSpikePipsModest : InpSpikePipsSolid;
 
          if(usdImpact > 0)
@@ -112,20 +124,20 @@ void OnTimer()
 }
 
 //+------------------------------------------------------------------+
-//| Manual hotkey triggers via ChartEvent (F9 = Buy, F10 = Sell)     |
+//| Manual hotkey triggers via ChartEvent (No F-keys)                |
 //+------------------------------------------------------------------+
 void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
 {
    if(id == CHARTEVENT_KEYDOWN)
    {
-      if(lparam == 121) // F10 key -> SELL SPIKE LIMIT
+      if(lparam == g_sellLimitKeyCode) // Default: 'L' key -> SELL SPIKE LIMIT
       {
-         Print("🔥 MANUAL TRIGGER: Hotkey F10 pressed. Arming SELL LIMIT at spike peak...");
+         PrintFormat("🔥 HOTKEY '%s' PRESSED: Arming 80%% Margin SELL LIMIT at spike peak...", InpSellLimitKey);
          ArmSpikeLimits(ORDER_TYPE_SELL_LIMIT, InpSpikePipsModest);
       }
-      else if(lparam == 120) // F9 key -> BUY SPIKE LIMIT
+      else if(lparam == g_buyLimitKeyCode) // Default: 'K' key -> BUY SPIKE LIMIT
       {
-         Print("🔥 MANUAL TRIGGER: Hotkey F9 pressed. Arming BUY LIMIT at spike low...");
+         PrintFormat("🔥 HOTKEY '%s' PRESSED: Arming 80%% Margin BUY LIMIT at spike low...", InpBuyLimitKey);
          ArmSpikeLimits(ORDER_TYPE_BUY_LIMIT, InpSpikePipsModest);
       }
    }
@@ -140,7 +152,6 @@ double CalculateDynamicLots(double marginPercent, string sym)
    double leverage = (double)AccountInfoInteger(ACCOUNT_LEVERAGE);
    if(leverage <= 0) leverage = 100.0;
 
-   // Enforce safety cap on percentage (max 95% to leave buffer for spread)
    double safePercent = MathMin(marginPercent, 95.0);
    double targetMarginToUse = freeMargin * (safePercent / 100.0);
 
@@ -155,7 +166,6 @@ double CalculateDynamicLots(double marginPercent, string sym)
 
    double calculatedLots = targetMarginToUse / marginForOneLot;
 
-   // Normalize to broker step & limits
    double lotStep = SymbolInfoDouble(sym, SYMBOL_VOLUME_STEP);
    double minLot  = SymbolInfoDouble(sym, SYMBOL_VOLUME_MIN);
    double maxLot  = SymbolInfoDouble(sym, SYMBOL_VOLUME_MAX);
@@ -184,7 +194,6 @@ void ArmSpikeLimits(ENUM_ORDER_TYPE orderType, int spikePips)
 
    int numSplits = MathMax(1, MathMin(InpSplitOrders, 3));
    double lotPerOrder = NormalizeDouble(totalLots / numSplits, 2);
-   double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
    double minLot  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
 
    if(lotPerOrder < minLot)
@@ -200,12 +209,12 @@ void ArmSpikeLimits(ENUM_ORDER_TYPE orderType, int spikePips)
 
    datetime expiryTime = TimeCurrent() + (InpExpiryMinutes * 60);
 
-   PrintFormat("🎯 SIZING: Account Free Margin: %.2f | Target Lot Size: %.2f across %d orders (%.2f lots/order)",
+   PrintFormat("🎯 SIZING: Free Margin: %.2f | Target Lot Size: %.2f across %d orders (%.2f lots/order)",
                AccountInfoDouble(ACCOUNT_MARGIN_FREE), totalLots, numSplits, lotPerOrder);
 
    for(int step = 0; step < numSplits; step++)
    {
-      double stepOffset = spikePips + (step * 5); // Ladder orders (e.g. +18, +23, +28 pips)
+      double stepOffset = spikePips + (step * 5);
       double limitPrice = 0.0;
       double sl = 0.0;
       double tp = 0.0;
@@ -225,7 +234,7 @@ void ArmSpikeLimits(ENUM_ORDER_TYPE orderType, int spikePips)
          }
          else
          {
-            PrintFormat("❌ Failed to place Sell Limit #%d. Retcode: %u (%s)", step + 1, trade.ResultRetcode(), trade.ResultRetcodeDescription());
+            PrintFormat("❌ Failed Sell Limit #%d. Retcode: %u (%s)", step + 1, trade.ResultRetcode(), trade.ResultRetcodeDescription());
          }
       }
       else if(orderType == ORDER_TYPE_BUY_LIMIT)
@@ -243,7 +252,7 @@ void ArmSpikeLimits(ENUM_ORDER_TYPE orderType, int spikePips)
          }
          else
          {
-            PrintFormat("❌ Failed to place Buy Limit #%d. Retcode: %u (%s)", step + 1, trade.ResultRetcode(), trade.ResultRetcodeDescription());
+            PrintFormat("❌ Failed Buy Limit #%d. Retcode: %u (%s)", step + 1, trade.ResultRetcode(), trade.ResultRetcodeDescription());
          }
       }
    }
@@ -264,11 +273,11 @@ int GetEventDirection(string name)
       StringFind(lowerName, "pmi") >= 0 || StringFind(lowerName, "ppi") >= 0 ||
       StringFind(lowerName, "jolts") >= 0)
    {
-      return 1; // Higher -> Strong USD -> Sell Gold
+      return 1;
    }
    else if(StringFind(lowerName, "unemployment rate") >= 0 || StringFind(lowerName, "jobless claims") >= 0)
    {
-      return -1; // Higher -> Weak USD -> Buy Gold
+      return -1;
    }
    return 0;
 }
