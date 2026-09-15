@@ -2,25 +2,21 @@
 //|                                     AllInOneNewsTerminal.mq5     |
 //|            High-Impact News Execution & Liquidation Engine       |
 //|    Combines: Barcode Spammer, Spike Limits, and Emergency Close  |
-//|    FEATURES: Big On-Screen Buttons + Single Letter Hotkeys       |
+//|    PURE MARKET EXECUTION: Zero SL / Zero TP (Manual Kill Switch) |
 //+------------------------------------------------------------------+
 #property copyright "News Sniper Terminal"
 #property link      "https://github.com/devUnlished/Us-fundamental-news-analysis"
-#property version   "2.50"
+#property version   "3.00"
 
 #include <Trade\Trade.mqh>
 
 input group "=== 1. BARCODE SPAMMER SETTINGS ===";
 input int      InpNumberOfStripes   = 8;       // Number of barcode stripes per trigger
 input double   InpLotPerStripe      = 0.01;    // Lot size per stripe
-input double   InpBarcodeTPDistance = 3.00;    // Take Profit distance in Gold $ (e.g. $3.00 = 30 pips)
-input double   InpBarcodeSLDistance = 4.00;    // Stop Loss distance in Gold $ (e.g. $4.00 = 40 pips)
 
 input group "=== 2. SPIKE LIMIT SNIPER SETTINGS ===";
 input double   InpMarginPercent     = 80.0;    // Margin to use for Limit Orders (% of Free Margin)
 input double   InpSpikeDistance     = 2.00;    // Spike distance in Gold $ above/below market
-input double   InpLimitTPDistance   = 6.00;    // Limit Take Profit in Gold $
-input double   InpLimitSLDistance   = 4.00;    // Limit Stop Loss in Gold $
 input int      InpLimitExpiryMins   = 5;       // Auto-cancel unfilled limits after N minutes
 
 input group "=== 3. EMERGENCY CLOSE SETTINGS ===";
@@ -86,7 +82,7 @@ int OnInit()
 
    DrawHUD();
    ChartRedraw(0);
-   PrintFormat(">>> ALL-IN-ONE TERMINAL INITIALIZED ON %s. Hotkeys: [S]=Sell, [B]=Buy, [X]=Close <<<", _Symbol);
+   PrintFormat(">>> NEWS TERMINAL RUNNING PURE EXECUTION (NO SL / NO TP). Control with [X] Kill Switch! <<<");
    return(INIT_SUCCEEDED);
 }
 
@@ -102,78 +98,66 @@ void OnDeinit(const int reason)
 
 void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
 {
+   // Mouse Button Clicks
    if(id == CHARTEVENT_OBJECT_CLICK)
    {
       if(sparam == "BTN_BUY")
       {
-         Print("🔥 BUTTON CLICK: Firing BUY Barcode...");
          ExecuteBarcode(ORDER_TYPE_BUY);
          ObjectSetInteger(0, "BTN_BUY", OBJPROP_STATE, false);
       }
       else if(sparam == "BTN_SELL")
       {
-         Print("🔥 BUTTON CLICK: Firing SELL Barcode...");
          ExecuteBarcode(ORDER_TYPE_SELL);
          ObjectSetInteger(0, "BTN_SELL", OBJPROP_STATE, false);
       }
       else if(sparam == "BTN_KLIMIT")
       {
-         Print("🎯 BUTTON CLICK: Arming BUY Limits...");
          ArmSpikeLimits(ORDER_TYPE_BUY_LIMIT);
          ObjectSetInteger(0, "BTN_KLIMIT", OBJPROP_STATE, false);
       }
       else if(sparam == "BTN_LLIMIT")
       {
-         Print("🎯 BUTTON CLICK: Arming SELL Limits...");
          ArmSpikeLimits(ORDER_TYPE_SELL_LIMIT);
          ObjectSetInteger(0, "BTN_LLIMIT", OBJPROP_STATE, false);
       }
       else if(sparam == "BTN_CLOSE")
       {
-         Print("🚨 BUTTON CLICK: Panic Close All...");
          ExecuteEmergencyClose();
          ObjectSetInteger(0, "BTN_CLOSE", OBJPROP_STATE, false);
       }
       ChartRedraw(0);
    }
 
+   // Keyboard Hotkeys
    if(id == CHARTEVENT_KEYDOWN)
    {
       if(lparam == code_S || lparam == 115) // 'S' or 's'
       {
-         Print("🔥 KEY PRESSED [S]: Firing SELL Barcode...");
          ExecuteBarcode(ORDER_TYPE_SELL);
       }
       else if(lparam == code_B || lparam == 98) // 'B' or 'b'
       {
-         Print("🔥 KEY PRESSED [B]: Firing BUY Barcode...");
          ExecuteBarcode(ORDER_TYPE_BUY);
       }
       else if(lparam == code_L || lparam == 108) // 'L'
       {
-         Print("🎯 KEY PRESSED [L]: Arming SELL Limits...");
          ArmSpikeLimits(ORDER_TYPE_SELL_LIMIT);
       }
       else if(lparam == code_K || lparam == 107) // 'K'
       {
-         Print("🎯 KEY PRESSED [K]: Arming BUY Limits...");
          ArmSpikeLimits(ORDER_TYPE_BUY_LIMIT);
       }
       else if(lparam == code_X || lparam == 120) // 'X'
       {
-         Print("🚨 KEY PRESSED [X]: Panic Close All...");
          ExecuteEmergencyClose();
       }
    }
 }
 
+// 1. Pure Barcode Execution: Zero SL, Zero TP
 void ExecuteBarcode(ENUM_ORDER_TYPE orderType)
 {
-   int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
-   double stopLevel = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-   double safeSLDist = MathMax(InpBarcodeSLDistance, stopLevel + 0.50);
-   double safeTPDist = MathMax(InpBarcodeTPDistance, stopLevel + 0.50);
-
    int filled = 0;
    for(int i = 0; i < InpNumberOfStripes; i++)
    {
@@ -182,21 +166,20 @@ void ExecuteBarcode(ENUM_ORDER_TYPE orderType)
 
       if(orderType == ORDER_TYPE_SELL)
       {
-         double sl = (safeSLDist > 0) ? NormalizeDouble(bid + safeSLDist, digits) : 0;
-         double tp = (safeTPDist > 0) ? NormalizeDouble(bid - safeTPDist, digits) : 0;
-         if(trade.Sell(InpLotPerStripe, _Symbol, bid, sl, tp, "Barcode Stripe")) filled++;
+         // Pure Execution: 0.0 Stop Loss, 0.0 Take Profit
+         if(trade.Sell(InpLotPerStripe, _Symbol, bid, 0.0, 0.0, "Barcode Stripe")) filled++;
       }
       else
       {
-         double sl = (safeSLDist > 0) ? NormalizeDouble(ask - safeSLDist, digits) : 0;
-         double tp = (safeTPDist > 0) ? NormalizeDouble(ask + safeTPDist, digits) : 0;
-         if(trade.Buy(InpLotPerStripe, _Symbol, ask, sl, tp, "Barcode Stripe")) filled++;
+         // Pure Execution: 0.0 Stop Loss, 0.0 Take Profit
+         if(trade.Buy(InpLotPerStripe, _Symbol, ask, 0.0, 0.0, "Barcode Stripe")) filled++;
       }
       Sleep(20);
    }
-   PrintFormat("✅ BARCODE RESULT: %d/%d stripes filled on %s", filled, InpNumberOfStripes, _Symbol);
+   PrintFormat("✅ BARCODE EXECUTED: %d/%d stripes filled on %s (NO SL / NO TP)", filled, InpNumberOfStripes, _Symbol);
 }
 
+// 2. Pure Spike Limits: Zero SL, Zero TP
 void ArmSpikeLimits(ENUM_ORDER_TYPE orderType)
 {
    double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
@@ -229,22 +212,21 @@ void ArmSpikeLimits(ENUM_ORDER_TYPE orderType)
       {
          double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
          double p = NormalizeDouble(ask + offset, digits);
-         double sl = NormalizeDouble(p + InpLimitSLDistance, digits);
-         double tp = NormalizeDouble(p - InpLimitTPDistance, digits);
-         trade.SellLimit(halfLot, p, _Symbol, sl, tp, ORDER_TIME_SPECIFIED, expiry, "Spike Sell Limit");
+         // Zero SL and Zero TP
+         trade.SellLimit(halfLot, p, _Symbol, 0.0, 0.0, ORDER_TIME_SPECIFIED, expiry, "Spike Sell Limit");
       }
       else
       {
          double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
          double p = NormalizeDouble(bid - offset, digits);
-         double sl = NormalizeDouble(p - InpLimitSLDistance, digits);
-         double tp = NormalizeDouble(p + InpLimitTPDistance, digits);
-         trade.BuyLimit(halfLot, p, _Symbol, sl, tp, ORDER_TIME_SPECIFIED, expiry, "Spike Buy Limit");
+         // Zero SL and Zero TP
+         trade.BuyLimit(halfLot, p, _Symbol, 0.0, 0.0, ORDER_TIME_SPECIFIED, expiry, "Spike Buy Limit");
       }
    }
-   PrintFormat("✅ 80%% MARGIN LIMITS ARMED on %s (~%.2f lots)", _Symbol, totalLots);
+   PrintFormat("✅ 80%% LIMITS ARMED on %s (~%.2f lots, NO SL / NO TP)", _Symbol, totalLots);
 }
 
+// 3. Kill Switch: Instant Panic Close
 void ExecuteEmergencyClose()
 {
    int closed = 0;
@@ -275,5 +257,5 @@ void ExecuteEmergencyClose()
       if(oticket > 0) trade.OrderDelete(oticket);
    }
 
-   Alert(StringFormat("🚨 EMERGENCY CLOSE: Liquidated %d positions on %s!", closed, _Symbol));
+   Alert(StringFormat("🚨 KILL SWITCH ACTIVATED: Liquidated %d positions on %s!", closed, _Symbol));
 }
