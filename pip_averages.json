@@ -1,0 +1,46 @@
+{
+  "Core PCE": {
+    "count": 42,
+    "avg_pips": 470.1,
+    "max_pips": 1061.0,
+    "small_range": "< 0.10",
+    "small_pips": 541.5,
+    "med_range": "0.10 - 0.10",
+    "med_pips": 299.0,
+    "blowout_range": "> 0.10",
+    "blowout_pips": 569.9
+  },
+  "Unemployment Rate": {
+    "count": 38,
+    "avg_pips": 651.2,
+    "max_pips": 1440.0,
+    "small_range": "< 0.10",
+    "small_pips": 610.7,
+    "med_range": "0.10 - 0.20",
+    "med_pips": 617.2,
+    "blowout_range": "> 0.20",
+    "blowout_pips": 715.1
+  },
+  "NFP": {
+    "count": 59,
+    "avg_pips": 644.6,
+    "max_pips": 1775.0,
+    "small_range": "< 31.00",
+    "small_pips": 481.6,
+    "med_range": "31.00 - 68.00",
+    "med_pips": 667.1,
+    "blowout_range": "> 68.00",
+    "blowout_pips": 771.8
+  },
+  "Retail Sales": {
+    "count": 114,
+    "avg_pips": 450.7,
+    "max_pips": 1081.0,
+    "small_range": "< 0.20",
+    "small_pips": 408.2,
+    "med_range": "0.20 - 0.50",
+    "med_pips": 501.6,
+    "blowout_range": "> 0.50",
+    "blowout_pips": 442.3
+  }
+}

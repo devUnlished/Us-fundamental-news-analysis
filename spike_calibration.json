@@ -1,0 +1,111 @@
+{
+  "Core PCE": {
+    "SOLID": {
+      "count": 5,
+      "avg_spike_pips": 131.2,
+      "limit_placement_pips": 107.0,
+      "limit_placement_dollars": 10.7,
+      "avg_true_move_pips": 579.2,
+      "safe_tp_pips": 376.5,
+      "safe_tp_dollars": 37.65
+    },
+    "BLOWOUT": {
+      "count": 37,
+      "avg_spike_pips": 191.2,
+      "limit_placement_pips": 226.0,
+      "limit_placement_dollars": 22.6,
+      "avg_true_move_pips": 221.9,
+      "safe_tp_pips": 144.2,
+      "safe_tp_dollars": 14.42
+    }
+  },
+  "Unemployment": {
+    "SOLID": {
+      "count": 22,
+      "avg_spike_pips": 271.4,
+      "limit_placement_pips": 324.0,
+      "limit_placement_dollars": 32.4,
+      "avg_true_move_pips": 307.7,
+      "safe_tp_pips": 200.0,
+      "safe_tp_dollars": 20.0
+    },
+    "BLOWOUT": {
+      "count": 16,
+      "avg_spike_pips": 336.6,
+      "limit_placement_pips": 749.0,
+      "limit_placement_dollars": 74.9,
+      "avg_true_move_pips": 329.4,
+      "safe_tp_pips": 214.1,
+      "safe_tp_dollars": 21.41
+    }
+  },
+  "NFP": {
+    "MODEST": {
+      "count": 25,
+      "avg_spike_pips": 201.2,
+      "limit_placement_pips": 289.0,
+      "limit_placement_dollars": 28.9,
+      "avg_true_move_pips": 313.8,
+      "safe_tp_pips": 203.9,
+      "safe_tp_dollars": 20.39
+    },
+    "SOLID": {
+      "count": 19,
+      "avg_spike_pips": 190.6,
+      "limit_placement_pips": 301.0,
+      "limit_placement_dollars": 30.1,
+      "avg_true_move_pips": 489.7,
+      "safe_tp_pips": 318.3,
+      "safe_tp_dollars": 31.83
+    },
+    "BLOWOUT": {
+      "count": 15,
+      "avg_spike_pips": 162.2,
+      "limit_placement_pips": 301.0,
+      "limit_placement_dollars": 30.1,
+      "avg_true_move_pips": 544.1,
+      "safe_tp_pips": 353.6,
+      "safe_tp_dollars": 35.36
+    }
+  },
+  "Retail Sales": {
+    "MODEST": {
+      "count": 42,
+      "avg_spike_pips": 194.7,
+      "limit_placement_pips": 228.0,
+      "limit_placement_dollars": 22.8,
+      "avg_true_move_pips": 193.7,
+      "safe_tp_pips": 125.9,
+      "safe_tp_dollars": 12.59
+    },
+    "SOLID": {
+      "count": 29,
+      "avg_spike_pips": 239.0,
+      "limit_placement_pips": 337.0,
+      "limit_placement_dollars": 33.7,
+      "avg_true_move_pips": 211.8,
+      "safe_tp_pips": 137.7,
+      "safe_tp_dollars": 13.77
+    },
+    "BLOWOUT": {
+      "count": 43,
+      "avg_spike_pips": 195.7,
+      "limit_placement_pips": 228.0,
+      "limit_placement_dollars": 22.8,
+      "avg_true_move_pips": 231.6,
+      "safe_tp_pips": 150.5,
+      "safe_tp_dollars": 15.05
+    }
+  },
+  "FOMC": {
+    "BLOWOUT": {
+      "count": 1,
+      "avg_spike_pips": 219.0,
+      "limit_placement_pips": 219.0,
+      "limit_placement_dollars": 21.9,
+      "avg_true_move_pips": 328.0,
+      "safe_tp_pips": 213.2,
+      "safe_tp_dollars": 21.32
+    }
+  }
+}
