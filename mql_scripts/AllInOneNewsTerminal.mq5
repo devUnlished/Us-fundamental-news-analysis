@@ -21,6 +21,8 @@ input double   InpFallbackTPDist    = 30.0;    // Fallback Take Profit in Gold $
 
 input group "=== SPIKE LIMITS ===";
 input double   InpMarginPercent     = 70.0;    // Margin Utilization % for Spike Limit size
+input int      InpNumberOfLimitStripes = 10;   // Divide total lot size into N split limit orders
+input double   InpLadderStep        = 0.50;    // Pip/Dollar step between limit stripes ($0.50 = 5 pips)
 input int      InpLimitExpiryMins   = 15;      // Auto-cancel unfilled limits after N minutes
 
 input group "=== EMERGENCY CLOSE ===";
@@ -345,32 +347,44 @@ void ArmSpikeLimits(ENUM_ORDER_TYPE orderType)
    totalLots = MathFloor(totalLots / lotStep) * lotStep;
    totalLots = MathMax(totalLots, SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN));
 
-   double halfLot = NormalizeDouble(totalLots / 2.0, 2);
-   if(halfLot < 0.01) halfLot = totalLots;
+   int numStripes = (InpNumberOfLimitStripes > 0) ? InpNumberOfLimitStripes : 10;
+   double stripeLot = NormalizeDouble(totalLots / (double)numStripes, 2);
+   double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   double maxLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+   
+   if(stripeLot < minLot) stripeLot = minLot;
+   if(stripeLot > maxLot) stripeLot = maxLot;
+   
+   // Snap to broker volume step
+   stripeLot = MathFloor(stripeLot / lotStep) * lotStep;
+   if(stripeLot < minLot) stripeLot = minLot;
 
    int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
    datetime expiry = TimeCurrent() + (InpLimitExpiryMins * 60);
 
-   for(int i = 0; i < 2; i++)
+   int placed = 0;
+   for(int i = 0; i < numStripes; i++)
    {
-      double offset = g_activeSpikeOffset + (i * 3.0); // Split limit ladder
+      // Tightly laddered around the empirical wick depth (+- InpLadderStep per order)
+      double offset = g_activeSpikeOffset + ((double)i * InpLadderStep);
       if(orderType == ORDER_TYPE_SELL_LIMIT)
       {
          double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
          double p = NormalizeDouble(ask + offset, digits);
          double tp = (g_activeTPDist > 0) ? NormalizeDouble(p - g_activeTPDist, digits) : 0.0;
-         trade.SellLimit(halfLot, p, _Symbol, 0.0, tp, ORDER_TIME_SPECIFIED, expiry, "Spike Sell Limit");
+         if(trade.SellLimit(stripeLot, p, _Symbol, 0.0, tp, ORDER_TIME_SPECIFIED, expiry, "Spike Sell Limit")) placed++;
       }
       else
       {
          double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
          double p = NormalizeDouble(bid - offset, digits);
          double tp = (g_activeTPDist > 0) ? NormalizeDouble(p + g_activeTPDist, digits) : 0.0;
-         trade.BuyLimit(halfLot, p, _Symbol, 0.0, tp, ORDER_TIME_SPECIFIED, expiry, "Spike Buy Limit");
+         if(trade.BuyLimit(stripeLot, p, _Symbol, 0.0, tp, ORDER_TIME_SPECIFIED, expiry, "Spike Buy Limit")) placed++;
       }
+      Sleep(10);
    }
-   PrintFormat("✅ 80%% SPIKE LIMITS ARMED on %s (~%.2f lots, Wick Offset: +$%.0f, TP: +$%.0f)", 
-               _Symbol, totalLots, g_activeSpikeOffset, g_activeTPDist);
+   PrintFormat("✅ SPIKE LIMITS ARMED on %s: %d/%d orders placed at %.2f lots each (Total: ~%.2f lots, Base Wick Offset: $%.2f, Step: $%.2f, TP: +$%.2f)", 
+               _Symbol, placed, numStripes, stripeLot, (stripeLot * placed), g_activeSpikeOffset, InpLadderStep, g_activeTPDist);
 }
 
 void ExecuteEmergencyClose()
