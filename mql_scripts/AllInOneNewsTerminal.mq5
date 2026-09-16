@@ -25,6 +25,13 @@ input int      InpNumberOfLimitStripes = 10;   // Divide total lot size into N s
 input double   InpLadderStep        = 0.50;    // Pip/Dollar step between limit stripes ($0.50 = 5 pips)
 input int      InpLimitExpiryMins   = 15;      // Auto-cancel unfilled limits after N minutes
 
+input group "=== AUTO-PILOT NEWS ROBOT ===";
+input bool     InpEnableAutoPilot   = true;    // Trade hands-free when news alert triggers!
+input bool     InpAutoArmLimits     = true;    // Step 1: Auto-arm 10 Spike Limits at release
+input bool     InpAutoBarcode       = true;    // Step 2: Auto-fire Barcode after spike
+input int      InpBarcodeDelaySecs  = 12;      // Seconds to wait after spike before firing Barcode
+input bool     InpEnableAudioAlert  = true;    // Play chime on automatic trade execution
+
 input group "=== EMERGENCY CLOSE ===";
 input int      InpMaxRetries        = 50;      // Retry attempts on broker requote
 input int      InpSlippagePoints    = 300;     // Slippage allowance in points (30 pips)
@@ -35,6 +42,15 @@ string g_activeNewsName = "Standby (Normal)";
 double g_activeSpikeOffset = 18.00; // in Gold dollars ($18.00 = 180 pips)
 double g_activeTPDist = 30.00;      // in Gold dollars ($30.00 = 300 pips)
 string g_activeTier = "STANDARD";
+
+// Auto-pilot state tracking
+ulong  g_lastTradedValueId = 0;
+datetime g_signalTriggerTime = 0;
+ENUM_ORDER_TYPE g_pendingBarcodeType = WRONG_VALUE;
+bool   g_barcodePending = false;
+
+void ExecuteBarcode(ENUM_ORDER_TYPE orderType);
+void ArmSpikeLimits(ENUM_ORDER_TYPE orderType);
 
 void CreateButton(string name, string text, int x, int y, int w, int h, color bg, color fg, int fontSize = 9)
 {
@@ -170,6 +186,52 @@ void CalibrateNewsTargets()
                else                 { g_activeTier = "SOLID";   g_activeSpikeOffset = 14.0; g_activeTPDist = 25.0; }
                return;
             }
+            // Auto-Pilot Execution on New Calendar Release
+            if(InpEnableAutoPilot && values[i].id != 0 && values[i].id != g_lastTradedValueId)
+            {
+               if(actual != WRONG_VALUE && bench != WRONG_VALUE && MathAbs(actual - bench) > 0.0001)
+               {
+                  int signalDir = 0; // +1 = Strong USD -> SELL GOLD, -1 = Weak USD -> BUY GOLD
+                  if(StringFind(low, "unemployment rate") >= 0 || StringFind(low, "jobless claims") >= 0)
+                  {
+                     signalDir = (actual > bench) ? -1 : 1; // Higher unemployment -> Weak USD -> Buy Gold (-1)
+                  }
+                  else
+                  {
+                     signalDir = (actual > bench) ? 1 : -1; // Higher CPI/NFP/PCE -> Strong USD -> Sell Gold (+1)
+                  }
+
+                  g_lastTradedValueId = values[i].id;
+                  ENUM_ORDER_TYPE spikeLimitType = (signalDir == 1) ? ORDER_TYPE_SELL_LIMIT : ORDER_TYPE_BUY_LIMIT;
+                  ENUM_ORDER_TYPE barcodeType    = (signalDir == 1) ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
+
+                  string dirName = (signalDir == 1) ? "SELL GOLD (Strong USD)" : "BUY GOLD (Weak USD)";
+                  PrintFormat("🚀 [AUTO-PILOT ALERT TRIGGERED]: %s | Direction: %s | Actual: %.2f vs Forecast: %.2f", 
+                              ev.name, dirName, actual, bench);
+
+                  if(InpEnableAudioAlert)
+                  {
+                     Alert(StringFormat("🤖 AUTO-PILOT TRIGGERED: %s -> %s!", ev.name, dirName));
+                  }
+
+                  // Step 1: Immediately arm 10 Spike Limits across the manipulation wick depth
+                  if(InpAutoArmLimits)
+                  {
+                     ArmSpikeLimits(spikeLimitType);
+                  }
+
+                  // Step 2: Schedule the post-spike Barcode market blast
+                  if(InpAutoBarcode)
+                  {
+                     g_signalTriggerTime = TimeCurrent();
+                     g_pendingBarcodeType = barcodeType;
+                     g_barcodePending = true;
+                     PrintFormat("⏳ Post-spike Barcode armed: Will fire in %d seconds in direction %s...", 
+                                 InpBarcodeDelaySecs, dirName);
+                  }
+                  return;
+               }
+            }
          }
       }
    }
@@ -181,6 +243,21 @@ void CalibrateNewsTargets()
    g_activeTPDist = InpFallbackTPDist;
 }
 
+void CheckAutoBarcodeTimer()
+{
+   if(!InpEnableAutoPilot || !g_barcodePending || g_pendingBarcodeType == WRONG_VALUE) return;
+
+   datetime now = TimeCurrent();
+   if(now - g_signalTriggerTime >= InpBarcodeDelaySecs)
+   {
+      PrintFormat("🔥 [POST-SPIKE BARCODE FIRING]: %d seconds elapsed since spike! Executing Barcode stripes...", 
+                  (int)(now - g_signalTriggerTime));
+      ExecuteBarcode(g_pendingBarcodeType);
+      g_barcodePending = false;
+      g_pendingBarcodeType = WRONG_VALUE;
+   }
+}
+
 void UpdateHUDStatus()
 {
    string textVal = ObjectGetString(0, "EDT_LOT_SIZE", OBJPROP_TEXT);
@@ -188,13 +265,16 @@ void UpdateHUDStatus()
    if(enteredLot >= 0.01 && enteredLot <= 50.0) g_currentLot = NormalizeDouble(enteredLot, 2);
 
    CalibrateNewsTargets();
+   CheckAutoBarcodeTimer();
 
    // Update Limit button texts with live calibrated spike wick distances
    ObjectSetString(0, "BTN_KLIMIT", OBJPROP_TEXT, StringFormat("K: BUY LIMIT (-$%.0f)", g_activeSpikeOffset));
    ObjectSetString(0, "BTN_LLIMIT", OBJPROP_TEXT, StringFormat("L: SELL LIMIT (+$%.0f)", g_activeSpikeOffset));
 
-   string info = StringFormat("Active Stripe: %.2f (10x = %.2f lots) | Spike Wick: $%.0f (%d pips) | Target TP: +$%.0f (%d pips)", 
-                              g_currentLot, g_currentLot * InpNumberOfStripes, g_activeSpikeOffset, (int)(g_activeSpikeOffset*10), g_activeTPDist, (int)(g_activeTPDist*10));
+   string autoStatus = InpEnableAutoPilot ? "🤖 AUTO-PILOT: ON" : "✋ MANUAL ONLY";
+   string barcodePendingTxt = g_barcodePending ? " | ⏳ BARCODE ARMED" : "";
+   string info = StringFormat("%s%s | Stripe: %.2f | Wick: $%.0f (%d p) | TP: +$%.0f (%d p)", 
+                              autoStatus, barcodePendingTxt, g_currentLot, g_activeSpikeOffset, (int)(g_activeSpikeOffset*10), g_activeTPDist, (int)(g_activeTPDist*10));
    ObjectSetString(0, "LBL_STATUS", OBJPROP_TEXT, info);
    ChartRedraw(0);
 }
@@ -208,7 +288,7 @@ int OnInit()
 
    DrawHUD();
    UpdateHUDStatus();
-   EventSetTimer(1);
+   EventSetMillisecondTimer(250); // Ultra-fast 250ms reaction cycle
    PrintFormat(">>> NEWS TERMINAL 5.00 ACTIVE: Calibrated Wick Limits & Dynamic TP Running! <<<");
    return(INIT_SUCCEEDED);
 }

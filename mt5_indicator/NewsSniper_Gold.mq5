@@ -1,4 +1,4 @@
-﻿//+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
 //|                                     NewsSniper_Gold.mq5          |
 //|                Fundamental News Indicator for XAUUSD (Gold)      |
 //+------------------------------------------------------------------+
@@ -105,33 +105,41 @@ void CreateHUD()
 {
    if(!InpShowDashboard) return;
 
+   int width = 340;
+   int height = 85;
+   int xOffset = 360; // 360 px from right edge
+
    ObjectCreate(0, "NewsSniper_BG", OBJ_RECTANGLE_LABEL, 0, 0, 0);
-   ObjectSetInteger(0, "NewsSniper_BG", OBJPROP_XDISTANCE, 20);
-   ObjectSetInteger(0, "NewsSniper_BG", OBJPROP_YDISTANCE, 40);
-   ObjectSetInteger(0, "NewsSniper_BG", OBJPROP_XSIZE, 340);
-   ObjectSetInteger(0, "NewsSniper_BG", OBJPROP_YSIZE, 85);
+   ObjectSetInteger(0, "NewsSniper_BG", OBJPROP_CORNER, CORNER_RIGHT_UPPER);
+   ObjectSetInteger(0, "NewsSniper_BG", OBJPROP_XDISTANCE, xOffset);
+   ObjectSetInteger(0, "NewsSniper_BG", OBJPROP_YDISTANCE, 20);
+   ObjectSetInteger(0, "NewsSniper_BG", OBJPROP_XSIZE, width);
+   ObjectSetInteger(0, "NewsSniper_BG", OBJPROP_YSIZE, height);
    ObjectSetInteger(0, "NewsSniper_BG", OBJPROP_BGCOLOR, C'20,24,30');
    ObjectSetInteger(0, "NewsSniper_BG", OBJPROP_BORDER_COLOR, clrDarkGray);
 
    ObjectCreate(0, "NewsSniper_Title", OBJ_LABEL, 0, 0, 0);
-   ObjectSetInteger(0, "NewsSniper_Title", OBJPROP_XDISTANCE, 30);
-   ObjectSetInteger(0, "NewsSniper_Title", OBJPROP_YDISTANCE, 48);
+   ObjectSetInteger(0, "NewsSniper_Title", OBJPROP_CORNER, CORNER_RIGHT_UPPER);
+   ObjectSetInteger(0, "NewsSniper_Title", OBJPROP_XDISTANCE, xOffset - 15);
+   ObjectSetInteger(0, "NewsSniper_Title", OBJPROP_YDISTANCE, 28);
    ObjectSetString(0, "NewsSniper_Title", OBJPROP_TEXT, "⚡ NEWS SNIPER | XAUUSD (NFP/CPI/FOMC/PCE)");
    ObjectSetInteger(0, "NewsSniper_Title", OBJPROP_COLOR, clrGold);
    ObjectSetString(0, "NewsSniper_Title", OBJPROP_FONT, "Segoe UI Bold");
    ObjectSetInteger(0, "NewsSniper_Title", OBJPROP_FONTSIZE, 9);
 
    ObjectCreate(0, "NewsSniper_Signal", OBJ_LABEL, 0, 0, 0);
-   ObjectSetInteger(0, "NewsSniper_Signal", OBJPROP_XDISTANCE, 30);
-   ObjectSetInteger(0, "NewsSniper_Signal", OBJPROP_YDISTANCE, 70);
+   ObjectSetInteger(0, "NewsSniper_Signal", OBJPROP_CORNER, CORNER_RIGHT_UPPER);
+   ObjectSetInteger(0, "NewsSniper_Signal", OBJPROP_XDISTANCE, xOffset - 15);
+   ObjectSetInteger(0, "NewsSniper_Signal", OBJPROP_YDISTANCE, 50);
    ObjectSetString(0, "NewsSniper_Signal", OBJPROP_TEXT, "STANDBY - WAITING FOR NEWS");
    ObjectSetInteger(0, "NewsSniper_Signal", OBJPROP_COLOR, clrLightGray);
    ObjectSetString(0, "NewsSniper_Signal", OBJPROP_FONT, "Segoe UI Bold");
    ObjectSetInteger(0, "NewsSniper_Signal", OBJPROP_FONTSIZE, 12);
 
    ObjectCreate(0, "NewsSniper_Info", OBJ_LABEL, 0, 0, 0);
-   ObjectSetInteger(0, "NewsSniper_Info", OBJPROP_XDISTANCE, 30);
-   ObjectSetInteger(0, "NewsSniper_Info", OBJPROP_YDISTANCE, 96);
+   ObjectSetInteger(0, "NewsSniper_Info", OBJPROP_CORNER, CORNER_RIGHT_UPPER);
+   ObjectSetInteger(0, "NewsSniper_Info", OBJPROP_XDISTANCE, xOffset - 15);
+   ObjectSetInteger(0, "NewsSniper_Info", OBJPROP_YDISTANCE, 76);
    ObjectSetString(0, "NewsSniper_Info", OBJPROP_TEXT, "Monitoring high-impact US calendar...");
    ObjectSetInteger(0, "NewsSniper_Info", OBJPROP_COLOR, clrSilver);
    ObjectSetString(0, "NewsSniper_Info", OBJPROP_FONT, "Segoe UI");
