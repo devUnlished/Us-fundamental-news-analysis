@@ -29,7 +29,9 @@ input group "=== AUTO-PILOT NEWS ROBOT ===";
 input bool     InpEnableAutoPilot   = true;    // Trade hands-free when news alert triggers!
 input bool     InpAutoArmLimits     = true;    // Step 1: Auto-arm 10 Spike Limits at release
 input bool     InpAutoBarcode       = true;    // Step 2: Auto-fire Barcode after spike
-input int      InpBarcodeDelaySecs  = 12;      // Seconds to wait after spike before firing Barcode
+input int      InpBarcodeDelaySecs  = 10;      // Seconds to wait after spike before firing 1st Barcode
+input int      InpBarcodeWaveCount  = 2;       // Number of Barcode waves to fire (default: 2 barcodes)
+input int      InpWaveIntervalSecs  = 5;       // Seconds between Wave 1 and Wave 2 Barcodes
 input bool     InpEnableAudioAlert  = true;    // Play chime on automatic trade execution
 
 input group "=== EMERGENCY CLOSE ===";
@@ -46,6 +48,8 @@ string g_activeTier = "STANDARD";
 // Auto-pilot state tracking
 ulong  g_lastTradedValueId = 0;
 datetime g_signalTriggerTime = 0;
+datetime g_lastWaveTime = 0;
+int    g_wavesFired = 0;
 ENUM_ORDER_TYPE g_pendingBarcodeType = WRONG_VALUE;
 bool   g_barcodePending = false;
 
@@ -224,10 +228,12 @@ void CalibrateNewsTargets()
                   if(InpAutoBarcode)
                   {
                      g_signalTriggerTime = TimeCurrent();
+                     g_lastWaveTime = 0;
+                     g_wavesFired = 0;
                      g_pendingBarcodeType = barcodeType;
                      g_barcodePending = true;
-                     PrintFormat("⏳ Post-spike Barcode armed: Will fire in %d seconds in direction %s...", 
-                                 InpBarcodeDelaySecs, dirName);
+                     PrintFormat("⏳ Post-spike Barcode armed: Will fire %d barcode waves (First wave in %d seconds) in direction %s...", 
+                                 InpBarcodeWaveCount, InpBarcodeDelaySecs, dirName);
                   }
                   return;
                }
@@ -248,13 +254,42 @@ void CheckAutoBarcodeTimer()
    if(!InpEnableAutoPilot || !g_barcodePending || g_pendingBarcodeType == WRONG_VALUE) return;
 
    datetime now = TimeCurrent();
-   if(now - g_signalTriggerTime >= InpBarcodeDelaySecs)
+
+   // Wave 1: After initial spike delay (default 10s)
+   if(g_wavesFired == 0)
    {
-      PrintFormat("🔥 [POST-SPIKE BARCODE FIRING]: %d seconds elapsed since spike! Executing Barcode stripes...", 
-                  (int)(now - g_signalTriggerTime));
-      ExecuteBarcode(g_pendingBarcodeType);
-      g_barcodePending = false;
-      g_pendingBarcodeType = WRONG_VALUE;
+      if(now - g_signalTriggerTime >= InpBarcodeDelaySecs)
+      {
+         PrintFormat("🔥 [POST-SPIKE BARCODE WAVE 1/2 FIRING]: %d seconds elapsed since release! Executing Wave 1 Barcode stripes...", 
+                     (int)(now - g_signalTriggerTime));
+         ExecuteBarcode(g_pendingBarcodeType);
+         g_wavesFired = 1;
+         g_lastWaveTime = now;
+
+         if(InpBarcodeWaveCount <= 1)
+         {
+            g_barcodePending = false;
+            g_pendingBarcodeType = WRONG_VALUE;
+         }
+      }
+   }
+   // Wave 2: After Wave interval (e.g. 5s after Wave 1 as trend accelerates)
+   else if(g_wavesFired < InpBarcodeWaveCount)
+   {
+      if(now - g_lastWaveTime >= InpWaveIntervalSecs)
+      {
+         g_wavesFired++;
+         PrintFormat("🔥🔥 [POST-SPIKE BARCODE WAVE %d/%d FIRING]: Momentum confirmation wave! Executing Wave %d Barcode stripes...", 
+                     g_wavesFired, InpBarcodeWaveCount, g_wavesFired);
+         ExecuteBarcode(g_pendingBarcodeType);
+         g_lastWaveTime = now;
+
+         if(g_wavesFired >= InpBarcodeWaveCount)
+         {
+            g_barcodePending = false;
+            g_pendingBarcodeType = WRONG_VALUE;
+         }
+      }
    }
 }
 
