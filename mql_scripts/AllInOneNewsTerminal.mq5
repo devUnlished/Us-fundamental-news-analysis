@@ -300,7 +300,7 @@ void CalibrateNewsTargets()
 
                      if(InpEnableAudioAlert)
                      {
-                        Alert(StringFormat("🤖 AUTO-PILOT TRIGGERED: %s -> %s!", ev.name, dirName));
+                        PrintFormat("🤖 AUTO-PILOT TRIGGERED: %s -> %s!", ev.name, dirName);
                      }
 
                      // Step 1: Immediately arm 10 Spike Limits across the manipulation wick depth
@@ -743,5 +743,5 @@ void ExecuteEmergencyClose()
       }
    }
 
-   Alert(StringFormat("⚡ NON-BLOCKING KILL SWITCH: %d close orders broadcast instantly to broker on %s!", fired, _Symbol));
+   PrintFormat("⚡ NON-BLOCKING KILL SWITCH: %d close orders broadcast instantly to broker on %s!", fired, _Symbol);
 }
