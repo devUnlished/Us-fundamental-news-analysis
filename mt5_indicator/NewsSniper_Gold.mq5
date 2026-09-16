@@ -14,6 +14,7 @@ input bool InpShowDashboard = true;  // Show On-Screen HUD
 string g_lastSignal = "STANDBY";
 string g_lastNews = "None";
 datetime g_lastCheckTime = 0;
+ulong g_lastEvaluatedValueId = 0;
 
 int OnInit()
 {
@@ -45,12 +46,25 @@ void OnTimer()
    {
       for(int i = 0; i < count; i++)
       {
-         if(values[i].actual_value != WRONG_VALUE)
+         bool hasActual = (values[i].actual_value != LONG_MIN && 
+                           values[i].actual_value != WRONG_VALUE && 
+                           values[i].actual_value > -9000000000000000000LL &&
+                           values[i].time <= now &&
+                           (now - values[i].time) <= 300);
+
+         if(hasActual && values[i].id != g_lastEvaluatedValueId)
          {
             MqlCalendarEvent event;
             if(CalendarEventById(values[i].event_id, event))
             {
-               EvaluateNews(event.name, (double)values[i].actual_value, (double)values[i].forecast_value, (double)values[i].prev_value);
+               g_lastEvaluatedValueId = values[i].id;
+               double mult = MathPow(10.0, event.digits);
+               if(mult <= 0) mult = 1.0;
+               double act = (double)values[i].actual_value / mult;
+               double fcast = (values[i].forecast_value != LONG_MIN && values[i].forecast_value != WRONG_VALUE && values[i].forecast_value > -9000000000000000000LL) ? (double)values[i].forecast_value / mult : WRONG_VALUE;
+               double prev = (values[i].prev_value != LONG_MIN && values[i].prev_value != WRONG_VALUE && values[i].prev_value > -9000000000000000000LL) ? (double)values[i].prev_value / mult : WRONG_VALUE;
+
+               EvaluateNews(event.name, act, fcast, prev);
                signalFired = true;
                break;
             }
@@ -69,8 +83,11 @@ void OnTimer()
                if(StringFind(low, "interest rate") >= 0 || StringFind(low, "fomc") >= 0 ||
                   StringFind(low, "federal funds") >= 0 || StringFind(low, "fed funds") >= 0)
                {
-                  double fcast = (double)values[i].forecast_value;
-                  string info = (fcast != WRONG_VALUE) ? StringFormat("Upcoming FOMC Rate Decision (Exp: %.2f%%)", fcast) : "Upcoming: FOMC Rate Decision";
+                  double mult = MathPow(10.0, event.digits);
+                  if(mult <= 0) mult = 1.0;
+                  bool hasFcast = (values[i].forecast_value != LONG_MIN && values[i].forecast_value != WRONG_VALUE && values[i].forecast_value > -9000000000000000000LL);
+                  double fcast = hasFcast ? (double)values[i].forecast_value / mult : 0.0;
+                  string info = hasFcast ? StringFormat("Upcoming: FOMC Rate Decision (Exp: %.2f%%)", fcast) : "Upcoming: FOMC Rate Decision";
                   ObjectSetString(0, "NewsSniper_Info", OBJPROP_TEXT, info);
                   break;
                }

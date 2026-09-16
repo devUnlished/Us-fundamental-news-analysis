@@ -56,7 +56,6 @@ bool   g_barcodePending = false;
 void ExecuteBarcode(ENUM_ORDER_TYPE orderType, double customLot = 0.0);
 void ArmSpikeLimits(ENUM_ORDER_TYPE orderType);
 bool CanAffordBarcode(ENUM_ORDER_TYPE orderType, double &outLotPerStripe);
-void SimulateLiveNewsTest(int direction); // +1 = Sell Gold, -1 = Buy Gold
 
 void CreateButton(string name, string text, int x, int y, int w, int h, color bg, color fg, int fontSize = 9)
 {
@@ -193,11 +192,29 @@ void CalibrateNewsTargets()
          if(CalendarEventById(values[i].event_id, ev))
          {
             string low = ev.name; StringToLower(low);
-            double actual = (double)values[i].actual_value;
-            double forecast = (double)values[i].forecast_value;
-            double prev = (double)values[i].prev_value;
-            double bench = (forecast != WRONG_VALUE) ? forecast : prev;
-            double diff = (actual != WRONG_VALUE && bench != WRONG_VALUE) ? MathAbs(actual - bench) : 0.0;
+            
+            bool hasActual = (values[i].actual_value != LONG_MIN && 
+                              values[i].actual_value != WRONG_VALUE && 
+                              values[i].actual_value > -9000000000000000000LL &&
+                              values[i].time <= now &&
+                              (now - values[i].time) <= 300);
+
+            bool hasForecast = (values[i].forecast_value != LONG_MIN && 
+                                values[i].forecast_value != WRONG_VALUE && 
+                                values[i].forecast_value > -9000000000000000000LL);
+
+            bool hasPrev = (values[i].prev_value != LONG_MIN && 
+                            values[i].prev_value != WRONG_VALUE && 
+                            values[i].prev_value > -9000000000000000000LL);
+
+            double mult = MathPow(10.0, ev.digits);
+            if(mult <= 0) mult = 1.0;
+
+            double actual   = hasActual ? ((double)values[i].actual_value / mult) : WRONG_VALUE;
+            double forecast = hasForecast ? ((double)values[i].forecast_value / mult) : WRONG_VALUE;
+            double prev     = hasPrev ? ((double)values[i].prev_value / mult) : WRONG_VALUE;
+            double bench    = (forecast != WRONG_VALUE) ? forecast : prev;
+            double diff     = (actual != WRONG_VALUE && bench != WRONG_VALUE) ? MathAbs(actual - bench) : 0.0;
 
             bool isTarget = false;
 
@@ -238,10 +255,10 @@ void CalibrateNewsTargets()
             {
                eventFound = true;
 
-               // Auto-Pilot Execution on New Calendar Release
-               if(InpEnableAutoPilot && values[i].id != 0 && values[i].id != g_lastTradedValueId)
+               // Auto-Pilot Execution on Real-Time Calendar Release ONLY
+               if(InpEnableAutoPilot && hasActual && bench != WRONG_VALUE && values[i].id != 0 && values[i].id != g_lastTradedValueId)
                {
-                  if(actual != WRONG_VALUE && bench != WRONG_VALUE && MathAbs(actual - bench) > 0.0001)
+                  if(MathAbs(actual - bench) > 0.0001)
                   {
                      int signalDir = 0; // +1 = Strong USD -> SELL GOLD, -1 = Weak USD -> BUY GOLD
                      if(StringFind(low, "unemployment rate") >= 0 || StringFind(low, "jobless claims") >= 0)
@@ -544,7 +561,6 @@ bool CanAffordBarcode(ENUM_ORDER_TYPE orderType, double &outLotPerStripe)
 
 void ExecuteBarcode(ENUM_ORDER_TYPE orderType, double customLot = 0.0)
 {
-   UpdateHUDStatus();
    int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
    double lotToUse = (customLot > 0.0) ? customLot : g_currentLot;
 
@@ -576,7 +592,6 @@ void ExecuteBarcode(ENUM_ORDER_TYPE orderType, double customLot = 0.0)
 
 void ArmSpikeLimits(ENUM_ORDER_TYPE orderType)
 {
-   UpdateHUDStatus();
    double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
    double leverage = (double)AccountInfoInteger(ACCOUNT_LEVERAGE);
    if(leverage <= 0) leverage = 100.0;
