@@ -6,7 +6,7 @@
 //+------------------------------------------------------------------+
 #property copyright "News Sniper"
 #property link      "https://github.com/devUnlished/Us-fundamental-news-analysis"
-#property version   "2.00"
+#property version   "2.10"
 #property indicator_chart_window
 #property indicator_plots 0
 
@@ -25,11 +25,43 @@ string   g_lastNewsDetail     = "Standby for upcoming market releases";
 ulong    g_lastAlertedEventId = 0;
 datetime g_lastCheckTime      = 0;
 
+datetime NormalizeToGMT(datetime eventTime)
+{
+   datetime tServer = TimeCurrent();
+   datetime tGMT    = TimeGMT();
+   
+   // If broker stored eventTime in server timezone, convert server -> GMT
+   if(MathAbs(eventTime - tServer) < MathAbs(eventTime - tGMT))
+   {
+      int offset = (int)(tServer - tGMT);
+      return (eventTime - offset);
+   }
+   return eventTime;
+}
+
+bool IsMarketShaker(string lowerName)
+{
+   return (StringFind(lowerName, "retail") >= 0 ||
+           StringFind(lowerName, "interest rate") >= 0 ||
+           StringFind(lowerName, "federal funds") >= 0 ||
+           StringFind(lowerName, "fed funds") >= 0 ||
+           StringFind(lowerName, "fomc") >= 0 ||
+           StringFind(lowerName, "nonfarm") >= 0 ||
+           StringFind(lowerName, "non farm") >= 0 ||
+           StringFind(lowerName, "cpi") >= 0 ||
+           StringFind(lowerName, "consumer price") >= 0 ||
+           StringFind(lowerName, "pce") >= 0 ||
+           StringFind(lowerName, "gdp") >= 0 ||
+           StringFind(lowerName, "unemployment rate") >= 0 ||
+           StringFind(lowerName, "jobless claims") >= 0);
+}
+
 int OnInit()
 {
    EventSetTimer(1);
    CreateHUD();
-   UpdateHUD(clrLightSlateGray, "STANDBY — WAITING FOR RELEASE", "Scanning high-impact US calendar...", "Timezone: GMT+2");
+   Print(">>> NewsSniper_Gold GMT+2 initialized on chart. Evaluating calendar... <<<");
+   OnTimer();
    return(INIT_SUCCEEDED);
 }
 
@@ -46,24 +78,27 @@ void OnTimer()
    if(nowGMT - g_lastCheckTime < 1) return;
    g_lastCheckTime = nowGMT;
 
-   datetime fromTime = nowGMT - 900;    // Scan last 15 minutes for fresh releases
-   datetime toTime   = nowGMT + 86400;  // Scan next 24 hours for upcoming events
+   // Broad query window covering both GMT and server offsets
+   datetime queryStart = MathMin(TimeGMT(), TimeCurrent()) - 7200;
+   datetime queryEnd   = MathMax(TimeGMT(), TimeCurrent()) + 86400;
 
    MqlCalendarValue values[];
-   int count = CalendarValueHistory(values, fromTime, toTime, "US");
+   int count = CalendarValueHistory(values, queryStart, queryEnd, "US");
 
    bool activeReleaseFound = false;
 
    if(count > 0)
    {
-      // 1. Check for newly PUBLISHED live release in the last 15 minutes
+      // 1. Priority 1: Check for newly PUBLISHED live release in the last 15 minutes
       for(int i = 0; i < count; i++)
       {
+         datetime eventGMT = NormalizeToGMT(values[i].time);
+         
          bool hasActual = (values[i].actual_value != LONG_MIN && 
                            values[i].actual_value != WRONG_VALUE && 
                            values[i].actual_value > -9000000000000000000LL &&
-                           values[i].time <= nowGMT &&
-                           (nowGMT - values[i].time) <= 900);
+                           eventGMT <= nowGMT &&
+                           (nowGMT - eventGMT) <= 900); // within 15 mins
 
          if(hasActual)
          {
@@ -73,7 +108,7 @@ void OnTimer()
                string low = ev.name; StringToLower(low);
                if(IsMarketShaker(low))
                {
-                  ProcessLiveRelease(ev, values[i]);
+                  ProcessLiveRelease(ev, values[i], eventGMT);
                   activeReleaseFound = true;
                   break;
                }
@@ -81,7 +116,7 @@ void OnTimer()
          }
       }
 
-      // 2. If no fresh release is active, preview the NEXT upcoming high-impact event (GMT+2)
+      // 2. Priority 2: If no fresh release, preview the CHRONOLOGICALLY NEAREST upcoming event
       if(!activeReleaseFound)
       {
          datetime nearestTime = 0;
@@ -90,7 +125,9 @@ void OnTimer()
 
          for(int i = 0; i < count; i++)
          {
-            if(values[i].time > nowGMT)
+            datetime eventGMT = NormalizeToGMT(values[i].time);
+
+            if(eventGMT >= (nowGMT - 60)) // upcoming or due right now
             {
                MqlCalendarEvent ev;
                if(CalendarEventById(values[i].event_id, ev))
@@ -98,9 +135,9 @@ void OnTimer()
                   string low = ev.name; StringToLower(low);
                   if(IsMarketShaker(low))
                   {
-                     if(nearestTime == 0 || values[i].time < nearestTime)
+                     if(nearestTime == 0 || eventGMT < nearestTime)
                      {
-                        nearestTime = values[i].time;
+                        nearestTime = eventGMT;
                         nearestIdx = i;
                         nearestEv = ev;
                      }
@@ -133,36 +170,23 @@ void OnTimer()
             string detail = "";
 
             if(hasFcast && hasPrev)
-               detail = StringFormat("Exp: %.2f%% | Prior: %.2f%% | Countdown: in %d mins", fcast, prev, minutesLeft);
+               detail = StringFormat("Exp: %.2f%% | Prior: %.2f%% | In: %d mins", fcast, prev, MathMax(minutesLeft, 0));
             else if(hasFcast)
-               detail = StringFormat("Exp: %.2f%% | Countdown: in %d mins", fcast, minutesLeft);
+               detail = StringFormat("Exp: %.2f%% | In: %d mins", fcast, MathMax(minutesLeft, 0));
             else
-               detail = StringFormat("Release in %d minutes", minutesLeft);
+               detail = StringFormat("Release in: %d mins", MathMax(minutesLeft, 0));
 
             UpdateHUD(C'148,163,184', "STANDBY — WAITING FOR RELEASE", headline, detail);
+         }
+         else
+         {
+            UpdateHUD(C'148,163,184', "STANDBY — NO UPCOMING EVENT", "Monitoring high-impact US calendar...", "Timezone: GMT+2");
          }
       }
    }
 }
 
-bool IsMarketShaker(string lowerName)
-{
-   return (StringFind(lowerName, "interest rate") >= 0 ||
-           StringFind(lowerName, "federal funds") >= 0 ||
-           StringFind(lowerName, "fed funds") >= 0 ||
-           StringFind(lowerName, "fomc") >= 0 ||
-           StringFind(lowerName, "nonfarm") >= 0 ||
-           StringFind(lowerName, "non farm") >= 0 ||
-           StringFind(lowerName, "cpi") >= 0 ||
-           StringFind(lowerName, "consumer price") >= 0 ||
-           StringFind(lowerName, "pce") >= 0 ||
-           StringFind(lowerName, "retail sales") >= 0 ||
-           StringFind(lowerName, "gdp") >= 0 ||
-           StringFind(lowerName, "unemployment rate") >= 0 ||
-           StringFind(lowerName, "jobless claims") >= 0);
-}
-
-void ProcessLiveRelease(const MqlCalendarEvent &ev, const MqlCalendarValue &val)
+void ProcessLiveRelease(const MqlCalendarEvent &ev, const MqlCalendarValue &val, datetime eventGMT)
 {
    double mult = MathPow(10.0, ev.digits);
    if(mult <= 0) mult = 1.0;
@@ -189,7 +213,7 @@ void ProcessLiveRelease(const MqlCalendarEvent &ev, const MqlCalendarValue &val)
    double diff = actual - bench;
    double usdImpact = diff * (double)direction;
 
-   datetime gmt2Time = val.time + (InpGMTOffsetHours * 3600);
+   datetime gmt2Time = eventGMT + (InpGMTOffsetHours * 3600);
    string timeStr = TimeToString(gmt2Time, TIME_MINUTES) + " GMT+2";
 
    string headline = StringFormat("%s (%s)", ev.name, timeStr);

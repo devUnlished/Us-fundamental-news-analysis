@@ -206,40 +206,103 @@ void CalibrateNewsTargets()
 
    if(count > 0)
    {
+      int targetIdx = -1;
+      datetime nearestTime = 0;
+
+      // Priority 1: Check if an event was published in the last 5 minutes
       for(int i = 0; i < count; i++)
       {
+         bool hasActual = (values[i].actual_value != LONG_MIN && 
+                           values[i].actual_value != WRONG_VALUE && 
+                           values[i].actual_value > -9000000000000000000LL &&
+                           values[i].time <= now &&
+                           (now - values[i].time) <= 300);
+
+         if(hasActual)
+         {
+            MqlCalendarEvent ev;
+            if(CalendarEventById(values[i].event_id, ev))
+            {
+               string low = ev.name; StringToLower(low);
+               if(StringFind(low, "retail") >= 0 || StringFind(low, "fomc") >= 0 ||
+                  StringFind(low, "interest rate") >= 0 || StringFind(low, "federal funds") >= 0 ||
+                  StringFind(low, "cpi") >= 0 || StringFind(low, "nonfarm") >= 0)
+               {
+                  targetIdx = i;
+                  break;
+               }
+            }
+         }
+      }
+
+      // Priority 2: If no live release right now, select the CHRONOLOGICALLY NEAREST upcoming target
+      if(targetIdx < 0)
+      {
+         for(int i = 0; i < count; i++)
+         {
+            if(values[i].time >= (now - 60))
+            {
+               MqlCalendarEvent ev;
+               if(CalendarEventById(values[i].event_id, ev))
+               {
+                  string low = ev.name; StringToLower(low);
+                  if(StringFind(low, "retail") >= 0 || StringFind(low, "fomc") >= 0 ||
+                     StringFind(low, "interest rate") >= 0 || StringFind(low, "federal funds") >= 0 ||
+                     StringFind(low, "cpi") >= 0 || StringFind(low, "nonfarm") >= 0)
+                  {
+                     if(nearestTime == 0 || values[i].time < nearestTime)
+                     {
+                        nearestTime = values[i].time;
+                        targetIdx = i;
+                     }
+                  }
+               }
+            }
+         }
+      }
+
+      if(targetIdx >= 0)
+      {
          MqlCalendarEvent ev;
-         if(CalendarEventById(values[i].event_id, ev))
+         if(CalendarEventById(values[targetIdx].event_id, ev))
          {
             string low = ev.name; StringToLower(low);
             
-            bool hasActual = (values[i].actual_value != LONG_MIN && 
-                              values[i].actual_value != WRONG_VALUE && 
-                              values[i].actual_value > -9000000000000000000LL &&
-                              values[i].time <= now &&
-                              (now - values[i].time) <= 300);
+            bool hasActual = (values[targetIdx].actual_value != LONG_MIN && 
+                              values[targetIdx].actual_value != WRONG_VALUE && 
+                              values[targetIdx].actual_value > -9000000000000000000LL &&
+                              values[targetIdx].time <= now &&
+                              (now - values[targetIdx].time) <= 300);
 
-            bool hasForecast = (values[i].forecast_value != LONG_MIN && 
-                                values[i].forecast_value != WRONG_VALUE && 
-                                values[i].forecast_value > -9000000000000000000LL);
+            bool hasForecast = (values[targetIdx].forecast_value != LONG_MIN && 
+                                values[targetIdx].forecast_value != WRONG_VALUE && 
+                                values[targetIdx].forecast_value > -9000000000000000000LL);
 
-            bool hasPrev = (values[i].prev_value != LONG_MIN && 
-                            values[i].prev_value != WRONG_VALUE && 
-                            values[i].prev_value > -9000000000000000000LL);
+            bool hasPrev = (values[targetIdx].prev_value != LONG_MIN && 
+                            values[targetIdx].prev_value != WRONG_VALUE && 
+                            values[targetIdx].prev_value > -9000000000000000000LL);
 
             double mult = MathPow(10.0, ev.digits);
             if(mult <= 0) mult = 1.0;
 
-            double actual   = hasActual ? ((double)values[i].actual_value / mult) : WRONG_VALUE;
-            double forecast = hasForecast ? ((double)values[i].forecast_value / mult) : WRONG_VALUE;
-            double prev     = hasPrev ? ((double)values[i].prev_value / mult) : WRONG_VALUE;
+            double actual   = hasActual ? ((double)values[targetIdx].actual_value / mult) : WRONG_VALUE;
+            double forecast = hasForecast ? ((double)values[targetIdx].forecast_value / mult) : WRONG_VALUE;
+            double prev     = hasPrev ? ((double)values[targetIdx].prev_value / mult) : WRONG_VALUE;
             double bench    = (forecast != WRONG_VALUE) ? forecast : prev;
             double diff     = (actual != WRONG_VALUE && bench != WRONG_VALUE) ? MathAbs(actual - bench) : 0.0;
 
             bool isTarget = false;
 
-            if(StringFind(low, "interest rate") >= 0 || StringFind(low, "fomc") >= 0 || 
-               StringFind(low, "federal funds") >= 0 || StringFind(low, "fed funds") >= 0)
+            if(StringFind(low, "retail") >= 0)
+            {
+               g_activeNewsName = "Retail Sales (MoM)";
+               g_activeTier = "SOLID"; 
+               g_activeSpikeOffset = 16.0; // $16.00 (160 pip wick)
+               g_activeTPDist = 35.0;      // $35.00 (350 pip TP)
+               isTarget = true;
+            }
+            else if(StringFind(low, "interest rate") >= 0 || StringFind(low, "fomc") >= 0 || 
+                    StringFind(low, "federal funds") >= 0 || StringFind(low, "fed funds") >= 0)
             {
                g_activeNewsName = "FOMC Rate Decision";
                g_activeTier = "BLOWOUT"; 
@@ -263,20 +326,13 @@ void CalibrateNewsTargets()
                else                 { g_activeTier = "MODEST";  g_activeSpikeOffset = 12.0; g_activeTPDist = 25.0; }
                isTarget = true;
             }
-            else if(StringFind(low, "retail sales") >= 0 || StringFind(low, "pce") >= 0 || StringFind(low, "gdp") >= 0)
-            {
-               g_activeNewsName = ev.name;
-               if(diff > 0.35)      { g_activeTier = "BLOWOUT"; g_activeSpikeOffset = 18.0; g_activeTPDist = 35.0; }
-               else                 { g_activeTier = "SOLID";   g_activeSpikeOffset = 14.0; g_activeTPDist = 25.0; }
-               isTarget = true;
-            }
 
             if(isTarget)
             {
                eventFound = true;
 
                // Auto-Pilot Execution on Real-Time Calendar Release ONLY
-               if(InpEnableAutoPilot && hasActual && bench != WRONG_VALUE && values[i].id != 0 && values[i].id != g_lastTradedValueId)
+               if(InpEnableAutoPilot && hasActual && bench != WRONG_VALUE && values[targetIdx].id != 0 && values[targetIdx].id != g_lastTradedValueId)
                {
                   if(MathAbs(actual - bench) > 0.0001)
                   {
@@ -287,10 +343,10 @@ void CalibrateNewsTargets()
                      }
                      else
                      {
-                        signalDir = (actual > bench) ? 1 : -1; // Higher Rate/CPI/NFP/PCE -> Strong USD -> Sell Gold (+1)
+                        signalDir = (actual > bench) ? 1 : -1; // Higher Rate/CPI/NFP/PCE/Retail -> Strong USD -> Sell Gold (+1)
                      }
 
-                     g_lastTradedValueId = values[i].id;
+                     g_lastTradedValueId = values[targetIdx].id;
                      ENUM_ORDER_TYPE spikeLimitType = (signalDir == 1) ? ORDER_TYPE_SELL_LIMIT : ORDER_TYPE_BUY_LIMIT;
                      ENUM_ORDER_TYPE barcodeType    = (signalDir == 1) ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
 
