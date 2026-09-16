@@ -159,7 +159,6 @@
                 <button data-cat="NFP" style="background: #1e293b; color: #94a3b8; border: none; border-radius: 3px; font-size: 7.5px; padding: 2px 5px; cursor: pointer;">NFP</button>
                 <button data-cat="CPI" style="background: #1e293b; color: #94a3b8; border: none; border-radius: 3px; font-size: 7.5px; padding: 2px 5px; cursor: pointer;">CPI</button>
                 <button data-cat="FOMC" style="background: #1e293b; color: #94a3b8; border: none; border-radius: 3px; font-size: 7.5px; padding: 2px 5px; cursor: pointer;">FOMC</button>
-                <button data-cat="ADP" style="background: #1e293b; color: #94a3b8; border: none; border-radius: 3px; font-size: 7.5px; padding: 2px 5px; cursor: pointer;">ADP</button>
               </div>
               <button id="fn-view-more-btn" style="background: #1e293b; color: #38bdf8; border: 1px solid #334155; border-radius: 3px; font-size: 7.5px; padding: 2px 6px; cursor: pointer; font-weight: 700;">
                 +5 More
