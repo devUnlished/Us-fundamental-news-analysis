@@ -53,8 +53,9 @@ int    g_wavesFired = 0;
 ENUM_ORDER_TYPE g_pendingBarcodeType = WRONG_VALUE;
 bool   g_barcodePending = false;
 
-void ExecuteBarcode(ENUM_ORDER_TYPE orderType);
+void ExecuteBarcode(ENUM_ORDER_TYPE orderType, double customLot = 0.0);
 void ArmSpikeLimits(ENUM_ORDER_TYPE orderType);
+bool CanAffordBarcode(ENUM_ORDER_TYPE orderType, double &outLotPerStripe);
 
 void CreateButton(string name, string text, int x, int y, int w, int h, color bg, color fg, int fontSize = 9)
 {
@@ -255,39 +256,47 @@ void CheckAutoBarcodeTimer()
 
    datetime now = TimeCurrent();
 
-   // Wave 1: After initial spike delay (default 10s)
+   // Wave 1: The moment the adverse spike window finishes (or price starts moving) AND margin allows
    if(g_wavesFired == 0)
    {
       if(now - g_signalTriggerTime >= InpBarcodeDelaySecs)
       {
-         PrintFormat("🔥 [POST-SPIKE BARCODE WAVE 1/2 FIRING]: %d seconds elapsed since release! Executing Wave 1 Barcode stripes...", 
-                     (int)(now - g_signalTriggerTime));
-         ExecuteBarcode(g_pendingBarcodeType);
-         g_wavesFired = 1;
-         g_lastWaveTime = now;
-
-         if(InpBarcodeWaveCount <= 1)
+         double lotPerStripe = 0.0;
+         if(CanAffordBarcode(g_pendingBarcodeType, lotPerStripe))
          {
-            g_barcodePending = false;
-            g_pendingBarcodeType = WRONG_VALUE;
+            PrintFormat("🔥 [BARCODE WAVE 1 FIRING]: Margin verified! Executing 10 stripes at %.2f lots...", lotPerStripe);
+            ExecuteBarcode(g_pendingBarcodeType, lotPerStripe);
+            g_wavesFired = 1;
+            g_lastWaveTime = now;
+
+            if(InpBarcodeWaveCount <= 1)
+            {
+               g_barcodePending = false;
+               g_pendingBarcodeType = WRONG_VALUE;
+            }
          }
       }
    }
-   // Wave 2: After Wave interval (e.g. 5s after Wave 1 as trend accelerates)
+   // Wave 2: The moment equity/free margin unlocks from Wave 1 profits, fire the next wave!
    else if(g_wavesFired < InpBarcodeWaveCount)
    {
-      if(now - g_lastWaveTime >= InpWaveIntervalSecs)
+      // Check every 250ms if margin/equity has expanded enough to fund Wave 2
+      if(now - g_lastWaveTime >= 2) // At least 2 seconds after Wave 1
       {
-         g_wavesFired++;
-         PrintFormat("🔥🔥 [POST-SPIKE BARCODE WAVE %d/%d FIRING]: Momentum confirmation wave! Executing Wave %d Barcode stripes...", 
-                     g_wavesFired, InpBarcodeWaveCount, g_wavesFired);
-         ExecuteBarcode(g_pendingBarcodeType);
-         g_lastWaveTime = now;
-
-         if(g_wavesFired >= InpBarcodeWaveCount)
+         double lotPerStripe2 = 0.0;
+         if(CanAffordBarcode(g_pendingBarcodeType, lotPerStripe2))
          {
-            g_barcodePending = false;
-            g_pendingBarcodeType = WRONG_VALUE;
+            g_wavesFired++;
+            PrintFormat("🔥🔥 [BARCODE WAVE %d/%d FIRING]: Equity expanded! Free margin unlocked. Firing 10 stripes at %.2f lots!", 
+                        g_wavesFired, InpBarcodeWaveCount, lotPerStripe2);
+            ExecuteBarcode(g_pendingBarcodeType, lotPerStripe2);
+            g_lastWaveTime = now;
+
+            if(g_wavesFired >= InpBarcodeWaveCount)
+            {
+               g_barcodePending = false;
+               g_pendingBarcodeType = WRONG_VALUE;
+            }
          }
       }
    }
@@ -415,31 +424,79 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    }
 }
 
-void ExecuteBarcode(ENUM_ORDER_TYPE orderType)
+bool CanAffordBarcode(ENUM_ORDER_TYPE orderType, double &outLotPerStripe)
+{
+   double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   double leverage = (double)AccountInfoInteger(ACCOUNT_LEVERAGE);
+   if(leverage <= 0) leverage = 100.0;
+
+   // 70% of currently available free margin
+   double targetMargin = freeMargin * (MathMin(InpMarginPercent, 95.0) / 100.0);
+   double price = (orderType == ORDER_TYPE_SELL) ? SymbolInfoDouble(_Symbol, SYMBOL_BID) : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double marginForOneLot = 0.0;
+
+   if(!OrderCalcMargin(orderType, _Symbol, 1.0, price, marginForOneLot) || marginForOneLot <= 0)
+   {
+      marginForOneLot = (price * 100.0) / leverage;
+   }
+
+   double totalLots = targetMargin / marginForOneLot;
+   double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   if(lotStep <= 0) lotStep = 0.01;
+   double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   if(minLot <= 0) minLot = 0.01;
+
+   // Divide into InpNumberOfStripes (default 10 stripes)
+   int numStripes = (InpNumberOfStripes > 0) ? InpNumberOfStripes : 10;
+   double lotPerStripe = MathFloor((totalLots / (double)numStripes) / lotStep) * lotStep;
+
+   // If 70% of margin can afford at least 10x minLot (e.g. 10 x 0.01 = 0.10 lot total)
+   if(lotPerStripe >= minLot)
+   {
+      outLotPerStripe = NormalizeDouble(lotPerStripe, 2);
+      return true;
+   }
+   
+   // If not enough for 10 stripes, check if free margin can at least afford 1 stripe of minLot
+   if(freeMargin >= (marginForOneLot * minLot * 1.5))
+   {
+      outLotPerStripe = minLot;
+      return true;
+   }
+
+   return false;
+}
+
+void ExecuteBarcode(ENUM_ORDER_TYPE orderType, double customLot = 0.0)
 {
    UpdateHUDStatus();
    int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+   double lotToUse = (customLot > 0.0) ? customLot : g_currentLot;
 
    int filled = 0;
    for(int i = 0; i < InpNumberOfStripes; i++)
    {
+      // Check free margin before each stripe to prevent margin rejection
+      double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+      if(freeMargin <= 5.0) break; // Leave safety buffer
+
       double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
       double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
 
       if(orderType == ORDER_TYPE_SELL)
       {
          double tp = (g_activeTPDist > 0) ? NormalizeDouble(bid - g_activeTPDist, digits) : 0.0;
-         if(trade.Sell(g_currentLot, _Symbol, bid, 0.0, tp, "Barcode Stripe")) filled++;
+         if(trade.Sell(lotToUse, _Symbol, bid, 0.0, tp, "Barcode Stripe")) filled++;
       }
       else
       {
          double tp = (g_activeTPDist > 0) ? NormalizeDouble(ask + g_activeTPDist, digits) : 0.0;
-         if(trade.Buy(g_currentLot, _Symbol, ask, 0.0, tp, "Barcode Stripe")) filled++;
+         if(trade.Buy(lotToUse, _Symbol, ask, 0.0, tp, "Barcode Stripe")) filled++;
       }
       Sleep(20);
    }
    PrintFormat("✅ BARCODE EXECUTED: %d/%d stripes filled at %.2f lots on %s (TP: +$%.2f [%d pips])", 
-               filled, InpNumberOfStripes, g_currentLot, _Symbol, g_activeTPDist, (int)(g_activeTPDist*10));
+               filled, InpNumberOfStripes, lotToUse, _Symbol, g_activeTPDist, (int)(g_activeTPDist*10));
 }
 
 void ArmSpikeLimits(ENUM_ORDER_TYPE orderType)
