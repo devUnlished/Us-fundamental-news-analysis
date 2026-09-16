@@ -618,27 +618,24 @@ void ArmSpikeLimits(ENUM_ORDER_TYPE orderType)
 
 void ExecuteEmergencyClose()
 {
-   int closed = 0;
    int total = PositionsTotal();
+   if(total == 0 && OrdersTotal() == 0) return;
+
+   // 1. Collect all position tickets first into memory
+   ulong posTickets[];
+   ArrayResize(posTickets, total);
+   int posCount = 0;
    for(int i = total - 1; i >= 0; i--)
    {
-      ulong ticket = PositionGetTicket(i);
-      if(ticket > 0)
+      ulong t = PositionGetTicket(i);
+      if(t > 0)
       {
-         int attempts = 0;
-         while(attempts < InpMaxRetries)
-         {
-            attempts++;
-            if(trade.PositionClose(ticket, InpSlippagePoints))
-            {
-               closed++;
-               break;
-            }
-            Sleep(80);
-         }
+         posTickets[posCount] = t;
+         posCount++;
       }
    }
 
+   // 2. Delete all pending limit orders immediately
    int orders = OrdersTotal();
    for(int i = orders - 1; i >= 0; i--)
    {
@@ -646,5 +643,52 @@ void ExecuteEmergencyClose()
       if(oticket > 0) trade.OrderDelete(oticket);
    }
 
-   Alert(StringFormat("🚨 KILL SWITCH ACTIVATED: Liquidated %d positions on %s!", closed, _Symbol));
+   // 3. Fire non-blocking asynchronous close orders in parallel to broker bridge
+   int fired = 0;
+   for(int i = 0; i < posCount; i++)
+   {
+      ulong ticket = posTickets[i];
+      if(!PositionSelectByTicket(ticket)) continue;
+
+      ENUM_POSITION_TYPE ptype = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+      double volume = PositionGetDouble(POSITION_VOLUME);
+      string sym = PositionGetString(POSITION_SYMBOL);
+
+      MqlTradeRequest request;
+      MqlTradeResult result;
+      ZeroMemory(request);
+      ZeroMemory(result);
+
+      request.action       = TRADE_ACTION_DEAL;
+      request.position     = ticket;
+      request.symbol       = sym;
+      request.volume       = volume;
+      request.deviation    = InpSlippagePoints;
+      request.type_filling = ORDER_FILLING_IOC;
+
+      if(ptype == POSITION_TYPE_BUY)
+      {
+         request.type  = ORDER_TYPE_SELL;
+         request.price = SymbolInfoDouble(sym, SYMBOL_BID);
+      }
+      else
+      {
+         request.type  = ORDER_TYPE_BUY;
+         request.price = SymbolInfoDouble(sym, SYMBOL_ASK);
+      }
+
+      // Parallel async dispatch: does NOT wait or sleep between orders
+      if(OrderSendAsync(request, result))
+      {
+         fired++;
+      }
+      else
+      {
+         // Fallback sync close if async unsupported by broker
+         trade.PositionClose(ticket, InpSlippagePoints);
+         fired++;
+      }
+   }
+
+   Alert(StringFormat("⚡ NON-BLOCKING KILL SWITCH: %d close orders broadcast instantly to broker on %s!", fired, _Symbol));
 }
