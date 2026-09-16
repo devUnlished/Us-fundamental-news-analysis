@@ -75,6 +75,12 @@ void OnDeinit(const int reason)
 void OnTimer()
 {
    datetime nowGMT = TimeGMT();
+   if(InpShowDashboard)
+   {
+      datetime gmt2Now = nowGMT + (InpGMTOffsetHours * 3600);
+      ObjectSetString(0, "NewsSniper_Clock", OBJPROP_TEXT, TimeToString(gmt2Now, TIME_SECONDS) + " GMT+2");
+   }
+
    if(nowGMT - g_lastCheckTime < 1) return;
    g_lastCheckTime = nowGMT;
 
@@ -271,10 +277,21 @@ void CreateHUD()
    ObjectSetInteger(0, "NewsSniper_Title", OBJPROP_CORNER, CORNER_LEFT_UPPER);
    ObjectSetInteger(0, "NewsSniper_Title", OBJPROP_XDISTANCE, startX + 10);
    ObjectSetInteger(0, "NewsSniper_Title", OBJPROP_YDISTANCE, startY + 6);
-   ObjectSetString(0, "NewsSniper_Title", OBJPROP_TEXT, "⚡ NEWS SNIPER | XAUUSD (GMT+2)");
+   ObjectSetString(0, "NewsSniper_Title", OBJPROP_TEXT, "⚡ NEWS SNIPER | XAUUSD");
    ObjectSetInteger(0, "NewsSniper_Title", OBJPROP_COLOR, clrGold);
    ObjectSetString(0, "NewsSniper_Title", OBJPROP_FONT, "Segoe UI Bold");
    ObjectSetInteger(0, "NewsSniper_Title", OBJPROP_FONTSIZE, 8);
+
+   // Digital Clock (Top-Right of HUD Box)
+   ObjectCreate(0, "NewsSniper_Clock", OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, "NewsSniper_Clock", OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, "NewsSniper_Clock", OBJPROP_ANCHOR, ANCHOR_RIGHT_UPPER);
+   ObjectSetInteger(0, "NewsSniper_Clock", OBJPROP_XDISTANCE, startX + width - 10);
+   ObjectSetInteger(0, "NewsSniper_Clock", OBJPROP_YDISTANCE, startY + 6);
+   ObjectSetString(0, "NewsSniper_Clock", OBJPROP_TEXT, "--:--:-- GMT+2");
+   ObjectSetInteger(0, "NewsSniper_Clock", OBJPROP_COLOR, C'56,189,248'); // Sky Blue
+   ObjectSetString(0, "NewsSniper_Clock", OBJPROP_FONT, "Segoe UI Bold");
+   ObjectSetInteger(0, "NewsSniper_Clock", OBJPROP_FONTSIZE, 8);
 
    ObjectCreate(0, "NewsSniper_Signal", OBJ_LABEL, 0, 0, 0);
    ObjectSetInteger(0, "NewsSniper_Signal", OBJPROP_CORNER, CORNER_LEFT_UPPER);
