@@ -96,23 +96,56 @@ void CreateEditBox(string name, string text, int x, int y, int w, int h)
 void DrawHUD()
 {
    int startX = 20;
-   int startY = 45;
+   int startY = 35;
    int btnW = 140;
    int btnH = 36;
    int gap = 6;
+   int totalW = (btnW * 2) + gap;
+
+   // Row 0: Prominent Dark Status & Signal Box
+   ObjectDelete(0, "BOX_AUTOBOT_BG");
+   ObjectCreate(0, "BOX_AUTOBOT_BG", OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, "BOX_AUTOBOT_BG", OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, "BOX_AUTOBOT_BG", OBJPROP_XDISTANCE, startX);
+   ObjectSetInteger(0, "BOX_AUTOBOT_BG", OBJPROP_YDISTANCE, startY);
+   ObjectSetInteger(0, "BOX_AUTOBOT_BG", OBJPROP_XSIZE, totalW);
+   ObjectSetInteger(0, "BOX_AUTOBOT_BG", OBJPROP_YSIZE, 38);
+   ObjectSetInteger(0, "BOX_AUTOBOT_BG", OBJPROP_BGCOLOR, C'15,23,42');
+   ObjectSetInteger(0, "BOX_AUTOBOT_BG", OBJPROP_BORDER_COLOR, C'51,65,85');
+
+   ObjectDelete(0, "LBL_AUTOBOT_BADGE");
+   ObjectCreate(0, "LBL_AUTOBOT_BADGE", OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_XDISTANCE, startX + 10);
+   ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_YDISTANCE, startY + 5);
+   ObjectSetString(0, "LBL_AUTOBOT_BADGE", OBJPROP_FONT, "Segoe UI Bold");
+   ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_FONTSIZE, 9);
+   ObjectSetString(0, "LBL_AUTOBOT_BADGE", OBJPROP_TEXT, "🤖 AUTO-PILOT TRADING BOT: ACTIVE");
+   ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_COLOR, C'52,211,153'); // Emerald green
+
+   ObjectDelete(0, "LBL_AUTOBOT_SIGNAL");
+   ObjectCreate(0, "LBL_AUTOBOT_SIGNAL", OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_XDISTANCE, startX + 10);
+   ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_YDISTANCE, startY + 20);
+   ObjectSetString(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_FONT, "Segoe UI Semibold");
+   ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_FONTSIZE, 8);
+   ObjectSetString(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_TEXT, "Waiting for release | 10 Limits + 2 Barcode Waves Armed");
+   ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_COLOR, C'148,163,184');
 
    // Row 1: Lot Selector
-   CreateButton("BTN_LOT_MINUS", "-", startX, startY, 30, 26, C'30,41,59', clrWhite, 11);
-   CreateEditBox("EDT_LOT_SIZE", DoubleToString(g_currentLot, 2), startX + 32, startY, 60, 26);
-   CreateButton("BTN_LOT_PLUS", "+", startX + 94, startY, 30, 26, C'30,41,59', clrWhite, 11);
+   int r1 = startY + 44;
+   CreateButton("BTN_LOT_MINUS", "-", startX, r1, 30, 26, C'30,41,59', clrWhite, 11);
+   CreateEditBox("EDT_LOT_SIZE", DoubleToString(g_currentLot, 2), startX + 32, r1, 60, 26);
+   CreateButton("BTN_LOT_PLUS", "+", startX + 94, r1, 30, 26, C'30,41,59', clrWhite, 11);
    
-   CreateButton("BTN_LOT_001", ".01", startX + 128, startY, 36, 26, C'15,23,42', C'148,163,184', 8);
-   CreateButton("BTN_LOT_005", ".05", startX + 166, startY, 36, 26, C'15,23,42', C'148,163,184', 8);
-   CreateButton("BTN_LOT_010", ".10", startX + 204, startY, 36, 26, C'15,23,42', C'148,163,184', 8);
-   CreateButton("BTN_LOT_020", ".20", startX + 242, startY, 36, 26, C'15,23,42', C'148,163,184', 8);
+   CreateButton("BTN_LOT_001", ".01", startX + 128, r1, 36, 26, C'15,23,42', C'148,163,184', 8);
+   CreateButton("BTN_LOT_005", ".05", startX + 166, r1, 36, 26, C'15,23,42', C'148,163,184', 8);
+   CreateButton("BTN_LOT_010", ".10", startX + 204, r1, 36, 26, C'15,23,42', C'148,163,184', 8);
+   CreateButton("BTN_LOT_020", ".20", startX + 242, r1, 36, 26, C'15,23,42', C'148,163,184', 8);
 
    // Row 2: Barcode Buy/Sell Buttons
-   int r2 = startY + 32;
+   int r2 = r1 + 32;
    CreateButton("BTN_BUY",  "▲ BUY BARCODE [B]",  startX, r2, btnW, btnH, C'22,163,74', clrWhite);
    CreateButton("BTN_SELL", "▼ SELL BARCODE [S]", startX + btnW + gap, r2, btnW, btnH, C'220,38,38', clrWhite);
 
@@ -125,7 +158,7 @@ void DrawHUD()
 
    // Row 4: Panic Close Kill Switch
    int r4 = r3 + 34;
-   CreateButton("BTN_CLOSE", "✖ PANIC CLOSE ALL [X]", startX, r4, (btnW * 2) + gap, 38, C'185,28,28', clrWhite);
+   CreateButton("BTN_CLOSE", "✖ PANIC CLOSE ALL [X]", startX, r4, totalW, 38, C'185,28,28', clrWhite);
 
    // Row 5: Dynamic Intelligence Display
    int r5 = r4 + 42;
@@ -315,10 +348,31 @@ void UpdateHUDStatus()
    ObjectSetString(0, "BTN_KLIMIT", OBJPROP_TEXT, StringFormat("K: BUY LIMIT (-$%.0f)", g_activeSpikeOffset));
    ObjectSetString(0, "BTN_LLIMIT", OBJPROP_TEXT, StringFormat("L: SELL LIMIT (+$%.0f)", g_activeSpikeOffset));
 
-   string autoStatus = InpEnableAutoPilot ? "🤖 AUTO-PILOT: ON" : "✋ MANUAL ONLY";
-   string barcodePendingTxt = g_barcodePending ? " | ⏳ BARCODE ARMED" : "";
-   string info = StringFormat("%s%s | Stripe: %.2f | Wick: $%.0f (%d p) | TP: +$%.0f (%d p)", 
-                              autoStatus, barcodePendingTxt, g_currentLot, g_activeSpikeOffset, (int)(g_activeSpikeOffset*10), g_activeTPDist, (int)(g_activeTPDist*10));
+   if(InpEnableAutoPilot)
+   {
+      ObjectSetString(0, "LBL_AUTOBOT_BADGE", OBJPROP_TEXT, "🤖 AUTO-PILOT NEWS ROBOT: ACTIVE");
+      ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_COLOR, C'52,211,153'); // Emerald Green
+      if(g_barcodePending)
+      {
+         ObjectSetString(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_TEXT, StringFormat("⏳ POST-SPIKE BARCODE ARMED: Firing Wave %d/%d...", g_wavesFired + 1, InpBarcodeWaveCount));
+         ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_COLOR, C'251,191,36'); // Amber Yellow
+      }
+      else
+      {
+         ObjectSetString(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_TEXT, StringFormat("Ready for release: 10 Limits (%d%% Margin) + %d Barcode Waves", (int)InpMarginPercent, InpBarcodeWaveCount));
+         ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_COLOR, C'148,163,184');
+      }
+   }
+   else
+   {
+      ObjectSetString(0, "LBL_AUTOBOT_BADGE", OBJPROP_TEXT, "✋ AUTO-PILOT DISABLED: MANUAL ONLY");
+      ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_COLOR, C'248,113,113'); // Red
+      ObjectSetString(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_TEXT, "Use B/S or K/L hotkeys to trade manually");
+      ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_COLOR, C'148,163,184');
+   }
+
+   string info = StringFormat("Stripe: %.2f | 70%% Wick Offset: $%.0f (%d p) | Target TP: +$%.0f (%d p)", 
+                              g_currentLot, g_activeSpikeOffset, (int)(g_activeSpikeOffset*10), g_activeTPDist, (int)(g_activeTPDist*10));
    ObjectSetString(0, "LBL_STATUS", OBJPROP_TEXT, info);
    ChartRedraw(0);
 }
@@ -340,6 +394,9 @@ int OnInit()
 void OnDeinit(const int reason)
 {
    EventKillTimer();
+   ObjectDelete(0, "BOX_AUTOBOT_BG");
+   ObjectDelete(0, "LBL_AUTOBOT_BADGE");
+   ObjectDelete(0, "LBL_AUTOBOT_SIGNAL");
    ObjectDelete(0, "BTN_LOT_MINUS");
    ObjectDelete(0, "EDT_LOT_SIZE");
    ObjectDelete(0, "BTN_LOT_PLUS");
