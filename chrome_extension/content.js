@@ -3,21 +3,26 @@
 (function() {
   console.log("[News Sniper Terminal] Connected to Live Institutional Economic Feed.");
 
-  function formatTime24WithAmPm(dateObj) {
-    const hours = dateObj.getHours();
-    const minutes = String(dateObj.getMinutes()).padStart(2, "0");
-    const seconds = String(dateObj.getSeconds()).padStart(2, "0");
+  function formatTime24WithAmPmGMT2(dateObj) {
+    // Pure UTC+2 calculation to prevent any local machine timezone drift
+    const totalMs = dateObj.getTime() + (2 * 60 * 60 * 1000);
+    const gmt2 = new Date(totalMs);
+    const hours = gmt2.getUTCHours();
+    const minutes = String(gmt2.getUTCMinutes()).padStart(2, "0");
+    const seconds = String(gmt2.getUTCSeconds()).padStart(2, "0");
     const ampm = hours >= 12 ? "PM" : "AM";
     const hours24 = String(hours).padStart(2, "0");
     return `${hours24}:${minutes}:${seconds} ${ampm}`;
   }
 
-  function formatShortDateWithTime(dateObj) {
+  function formatShortDateWithTimeGMT2(dateObj) {
     const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const month = months[dateObj.getMonth()];
-    const day = dateObj.getDate();
-    const hours = dateObj.getHours();
-    const minutes = String(dateObj.getMinutes()).padStart(2, "0");
+    const totalMs = dateObj.getTime() + (2 * 60 * 60 * 1000);
+    const gmt2 = new Date(totalMs);
+    const month = months[gmt2.getUTCMonth()];
+    const day = gmt2.getUTCDate();
+    const hours = gmt2.getUTCHours();
+    const minutes = String(gmt2.getUTCMinutes()).padStart(2, "0");
     const ampm = hours >= 12 ? "PM" : "AM";
     const hours24 = String(hours).padStart(2, "0");
     return `${month} ${day}, ${hours24}:${minutes} ${ampm}`;
@@ -378,8 +383,7 @@
       const horizonBadge = document.getElementById("fn-horizon-badge");
 
       const evDate = new Date(ev.date);
-      const gmt2Date = new Date(evDate.getTime() + (2 * 60 + evDate.getTimezoneOffset()) * 60000);
-      const fullDateStr = formatShortDateWithTime(gmt2Date) + " GMT+2";
+      const fullDateStr = formatShortDateWithTimeGMT2(evDate) + " GMT+2";
 
       action.innerText = ev.title;
       dateEl.innerText = fullDateStr;
@@ -507,8 +511,7 @@
       title.innerText = data.title;
       if (data.date) {
         const evDate = new Date(data.date);
-        const gmt2Date = new Date(evDate.getTime() + (2 * 60 + evDate.getTimezoneOffset()) * 60000);
-        dateEl.innerText = formatShortDateWithTime(gmt2Date) + " GMT+2";
+        dateEl.innerText = formatShortDateWithTimeGMT2(evDate) + " GMT+2";
       } else {
         dateEl.innerText = `${data.time || 'NOW'} GMT+2`;
       }
@@ -527,16 +530,16 @@
       playAudio(isBuy, isVeryHard);
     };
 
-    // Live Message Listener from background worker
+    // Listen for real-time messages from background service worker
     chrome.runtime.onMessage.addListener((msg) => {
-      if (msg.type === "NEWS_SIGNAL") {
-        window.renderSniperSignal(msg.data || msg);
-      } else if (msg.type === "UPCOMING_EVENT") {
+      if (msg.type === "UPCOMING_EVENT") {
         renderUpcoming(msg.data);
+      } else if (msg.type === "NEWS_SIGNAL") {
+        window.renderSniperSignal(msg.data);
       }
     });
 
-    // Request full state on initialization
+    // Request active state on load
     chrome.runtime.sendMessage({ type: "GET_STATE" }, (resp) => {
       if (resp) {
         if (resp.history && resp.history.length > 0) {
@@ -574,9 +577,8 @@
     // 24-hour Clock with AM/PM (GMT+2)
     setInterval(() => {
       const now = new Date();
-      const gmt2 = new Date(now.getTime() + (2 * 60 + now.getTimezoneOffset()) * 60000);
       const timeEl = document.getElementById("fn-time-display");
-      if (timeEl) timeEl.innerText = formatTime24WithAmPm(gmt2) + " GMT+2";
+      if (timeEl) timeEl.innerText = formatTime24WithAmPmGMT2(now) + " GMT+2";
     }, 1000);
   }
 })();
