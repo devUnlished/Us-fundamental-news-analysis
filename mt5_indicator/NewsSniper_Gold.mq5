@@ -8,7 +8,7 @@
 #property indicator_chart_window
 #property indicator_plots 0
 
-input bool InpEnableSound = true;    // Enable Audio Alert
+input bool InpEnableSound = false;   // Enable Audio Alert (Muted by default)
 input bool InpShowDashboard = true;  // Show On-Screen HUD
 
 string g_lastSignal = "STANDBY";

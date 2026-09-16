@@ -26,13 +26,13 @@ input double   InpLadderStep        = 0.50;    // Pip/Dollar step between limit 
 input int      InpLimitExpiryMins   = 15;      // Auto-cancel unfilled limits after N minutes
 
 input group "=== AUTO-PILOT NEWS ROBOT ===";
-input bool     InpEnableAutoPilot   = true;    // Trade hands-free when news alert triggers!
-input bool     InpAutoArmLimits     = true;    // Step 1: Auto-arm 10 Spike Limits at release
-input bool     InpAutoBarcode       = true;    // Step 2: Auto-fire Barcode after spike
+input bool     InpEnableAutoPilot   = false;   // Trade hands-free when news alert triggers (DISABLED)
+input bool     InpAutoArmLimits     = false;   // Step 1: Auto-arm 10 Spike Limits at release
+input bool     InpAutoBarcode       = false;   // Step 2: Auto-fire Barcode after spike
 input int      InpBarcodeDelaySecs  = 10;      // Seconds to wait after spike before firing 1st Barcode
 input int      InpBarcodeWaveCount  = 2;       // Number of Barcode waves to fire (default: 2 barcodes)
 input int      InpWaveIntervalSecs  = 5;       // Seconds between Wave 1 and Wave 2 Barcodes
-input bool     InpEnableAudioAlert  = true;    // Play chime on automatic trade execution
+input bool     InpEnableAudioAlert  = false;   // Play chime on automatic trade execution
 
 input group "=== EMERGENCY CLOSE ===";
 input int      InpMaxRetries        = 50;      // Retry attempts on broker requote
@@ -102,6 +102,10 @@ void DrawHUD()
    int gap = 6;
    int totalW = (btnW * 2) + gap;
 
+   // Explicitly purge any legacy test buttons from chart
+   ObjectDelete(0, "BTN_TEST_BUY");
+   ObjectDelete(0, "BTN_TEST_SELL");
+
    // Row 0: Prominent Dark Status & Signal Box
    ObjectDelete(0, "BOX_AUTOBOT_BG");
    ObjectCreate(0, "BOX_AUTOBOT_BG", OBJ_RECTANGLE_LABEL, 0, 0, 0);
@@ -120,8 +124,16 @@ void DrawHUD()
    ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_YDISTANCE, startY + 5);
    ObjectSetString(0, "LBL_AUTOBOT_BADGE", OBJPROP_FONT, "Segoe UI Bold");
    ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_FONTSIZE, 9);
-   ObjectSetString(0, "LBL_AUTOBOT_BADGE", OBJPROP_TEXT, "🤖 AUTO-PILOT TRADING BOT: ACTIVE");
-   ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_COLOR, C'52,211,153'); // Emerald green
+   if(InpEnableAutoPilot)
+   {
+      ObjectSetString(0, "LBL_AUTOBOT_BADGE", OBJPROP_TEXT, "🤖 AUTO-PILOT TRADING BOT: ACTIVE");
+      ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_COLOR, C'52,211,153'); // Emerald green
+   }
+   else
+   {
+      ObjectSetString(0, "LBL_AUTOBOT_BADGE", OBJPROP_TEXT, "✋ AUTO-PILOT DISABLED (MANUAL ONLY)");
+      ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_COLOR, C'248,113,113'); // Red
+   }
 
    ObjectDelete(0, "LBL_AUTOBOT_SIGNAL");
    ObjectCreate(0, "LBL_AUTOBOT_SIGNAL", OBJ_LABEL, 0, 0, 0);
@@ -130,8 +142,16 @@ void DrawHUD()
    ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_YDISTANCE, startY + 20);
    ObjectSetString(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_FONT, "Segoe UI Semibold");
    ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_FONTSIZE, 8);
-   ObjectSetString(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_TEXT, "Waiting for release | 10 Limits + 2 Barcode Waves Armed");
-   ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_COLOR, C'148,163,184');
+   if(InpEnableAutoPilot)
+   {
+      ObjectSetString(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_TEXT, "Waiting for release | 10 Limits + 2 Barcode Waves Armed");
+      ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_COLOR, C'148,163,184');
+   }
+   else
+   {
+      ObjectSetString(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_TEXT, "Live Auto-Pilot STOPPED | Manual Buttons & Hotkeys Only");
+      ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_COLOR, C'203,213,225');
+   }
 
    // Row 1: Lot Selector
    int r1 = startY + 44;
