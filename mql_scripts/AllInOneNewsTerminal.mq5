@@ -161,19 +161,13 @@ void DrawHUD()
    int r4 = r3 + 34;
    CreateButton("BTN_CLOSE", "✖ PANIC CLOSE ALL [X]", startX, r4, totalW, 38, C'185,28,28', clrWhite);
 
-   // Row 5: Live Test Simulation Trigger Buttons
+   // Row 5: Dynamic Intelligence Display
    int r5 = r4 + 42;
-   int halfW = (totalW - gap) / 2;
-   CreateButton("BTN_TEST_BUY",  "⚡ TEST LIVE: BUY GOLD",  startX, r5, halfW, 26, C'30,41,59', C'52,211,153', 8);
-   CreateButton("BTN_TEST_SELL", "⚡ TEST LIVE: SELL GOLD", startX + halfW + gap, r5, halfW, 26, C'30,41,59', C'248,113,113', 8);
-
-   // Row 6: Dynamic Intelligence Display
-   int r6 = r5 + 30;
    ObjectDelete(0, "LBL_STATUS");
    ObjectCreate(0, "LBL_STATUS", OBJ_LABEL, 0, 0, 0);
    ObjectSetInteger(0, "LBL_STATUS", OBJPROP_CORNER, CORNER_LEFT_UPPER);
    ObjectSetInteger(0, "LBL_STATUS", OBJPROP_XDISTANCE, startX);
-   ObjectSetInteger(0, "LBL_STATUS", OBJPROP_YDISTANCE, r6);
+   ObjectSetInteger(0, "LBL_STATUS", OBJPROP_YDISTANCE, r5);
    ObjectSetString(0, "LBL_STATUS", OBJPROP_FONT, "Segoe UI");
    ObjectSetInteger(0, "LBL_STATUS", OBJPROP_FONTSIZE, 8);
    ObjectSetInteger(0, "LBL_STATUS", OBJPROP_COLOR, C'148,163,184');
@@ -186,8 +180,11 @@ void CalibrateNewsTargets()
 
    datetime now = TimeCurrent();
    MqlCalendarValue values[];
-   int count = CalendarValueHistory(values, now - 300, now + 300, "US");
+   // Scan -1 hour up to +12 hours (43200s) to calibrate targets for FOMC/NFP/CPI well before release
+   int count = CalendarValueHistory(values, now - 3600, now + 43200, "US");
    
+   bool eventFound = false;
+
    if(count > 0)
    {
       for(int i = 0; i < count; i++)
@@ -202,92 +199,106 @@ void CalibrateNewsTargets()
             double bench = (forecast != WRONG_VALUE) ? forecast : prev;
             double diff = (actual != WRONG_VALUE && bench != WRONG_VALUE) ? MathAbs(actual - bench) : 0.0;
 
-            if(StringFind(low, "nonfarm") >= 0 || StringFind(low, "non farm") >= 0)
+            bool isTarget = false;
+
+            if(StringFind(low, "interest rate") >= 0 || StringFind(low, "fomc") >= 0 || 
+               StringFind(low, "federal funds") >= 0 || StringFind(low, "fed funds") >= 0)
+            {
+               g_activeNewsName = "FOMC Rate Decision";
+               g_activeTier = "BLOWOUT"; 
+               g_activeSpikeOffset = 22.0; // 220 pip manipulation wick limit
+               g_activeTPDist = 50.0;      // 500 pip TP target
+               isTarget = true;
+            }
+            else if(StringFind(low, "nonfarm") >= 0 || StringFind(low, "non farm") >= 0)
             {
                g_activeNewsName = "Nonfarm Payrolls (NFP)";
-               if(diff > 68.0)      { g_activeTier = "BLOWOUT"; g_activeSpikeOffset = 25.0; g_activeTPDist = 55.0; } // 250 pip wick, 550 pip TP
-               else if(diff > 30.0) { g_activeTier = "SOLID";   g_activeSpikeOffset = 20.0; g_activeTPDist = 45.0; } // 200 pip wick, 450 pip TP
-               else                 { g_activeTier = "MODEST";  g_activeSpikeOffset = 18.0; g_activeTPDist = 25.0; } // 180 pip wick, 250 pip TP
-               return;
+               if(diff > 68.0)      { g_activeTier = "BLOWOUT"; g_activeSpikeOffset = 25.0; g_activeTPDist = 55.0; }
+               else if(diff > 30.0) { g_activeTier = "SOLID";   g_activeSpikeOffset = 20.0; g_activeTPDist = 45.0; }
+               else                 { g_activeTier = "MODEST";  g_activeSpikeOffset = 18.0; g_activeTPDist = 25.0; }
+               isTarget = true;
             }
             else if(StringFind(low, "cpi") >= 0 || StringFind(low, "consumer price") >= 0)
             {
                g_activeNewsName = "Consumer Price Index (CPI)";
-               if(diff > 0.25)      { g_activeTier = "BLOWOUT"; g_activeSpikeOffset = 22.0; g_activeTPDist = 50.0; } // 220 pip wick, 500 pip TP
-               else if(diff > 0.12) { g_activeTier = "SOLID";   g_activeSpikeOffset = 16.0; g_activeTPDist = 38.0; } // 160 pip wick, 380 pip TP
-               else                 { g_activeTier = "MODEST";  g_activeSpikeOffset = 12.0; g_activeTPDist = 25.0; } // 120 pip wick, 250 pip TP
-               return;
+               if(diff > 0.25)      { g_activeTier = "BLOWOUT"; g_activeSpikeOffset = 22.0; g_activeTPDist = 50.0; }
+               else if(diff > 0.12) { g_activeTier = "SOLID";   g_activeSpikeOffset = 16.0; g_activeTPDist = 38.0; }
+               else                 { g_activeTier = "MODEST";  g_activeSpikeOffset = 12.0; g_activeTPDist = 25.0; }
+               isTarget = true;
             }
-            else if(StringFind(low, "interest rate") >= 0 || StringFind(low, "fomc") >= 0)
-            {
-               g_activeNewsName = "FOMC Rate Decision";
-               g_activeTier = "BLOWOUT"; g_activeSpikeOffset = 22.0; g_activeTPDist = 50.0;
-               return;
-            }
-            else if(StringFind(low, "retail sales") >= 0 || StringFind(low, "pce") >= 0)
+            else if(StringFind(low, "retail sales") >= 0 || StringFind(low, "pce") >= 0 || StringFind(low, "gdp") >= 0)
             {
                g_activeNewsName = ev.name;
                if(diff > 0.35)      { g_activeTier = "BLOWOUT"; g_activeSpikeOffset = 18.0; g_activeTPDist = 35.0; }
                else                 { g_activeTier = "SOLID";   g_activeSpikeOffset = 14.0; g_activeTPDist = 25.0; }
-               return;
+               isTarget = true;
             }
-            // Auto-Pilot Execution on New Calendar Release
-            if(InpEnableAutoPilot && values[i].id != 0 && values[i].id != g_lastTradedValueId)
+
+            if(isTarget)
             {
-               if(actual != WRONG_VALUE && bench != WRONG_VALUE && MathAbs(actual - bench) > 0.0001)
+               eventFound = true;
+
+               // Auto-Pilot Execution on New Calendar Release
+               if(InpEnableAutoPilot && values[i].id != 0 && values[i].id != g_lastTradedValueId)
                {
-                  int signalDir = 0; // +1 = Strong USD -> SELL GOLD, -1 = Weak USD -> BUY GOLD
-                  if(StringFind(low, "unemployment rate") >= 0 || StringFind(low, "jobless claims") >= 0)
+                  if(actual != WRONG_VALUE && bench != WRONG_VALUE && MathAbs(actual - bench) > 0.0001)
                   {
-                     signalDir = (actual > bench) ? -1 : 1; // Higher unemployment -> Weak USD -> Buy Gold (-1)
-                  }
-                  else
-                  {
-                     signalDir = (actual > bench) ? 1 : -1; // Higher CPI/NFP/PCE -> Strong USD -> Sell Gold (+1)
-                  }
+                     int signalDir = 0; // +1 = Strong USD -> SELL GOLD, -1 = Weak USD -> BUY GOLD
+                     if(StringFind(low, "unemployment rate") >= 0 || StringFind(low, "jobless claims") >= 0)
+                     {
+                        signalDir = (actual > bench) ? -1 : 1; // Higher unemployment -> Weak USD -> Buy Gold (-1)
+                     }
+                     else
+                     {
+                        signalDir = (actual > bench) ? 1 : -1; // Higher Rate/CPI/NFP/PCE -> Strong USD -> Sell Gold (+1)
+                     }
 
-                  g_lastTradedValueId = values[i].id;
-                  ENUM_ORDER_TYPE spikeLimitType = (signalDir == 1) ? ORDER_TYPE_SELL_LIMIT : ORDER_TYPE_BUY_LIMIT;
-                  ENUM_ORDER_TYPE barcodeType    = (signalDir == 1) ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
+                     g_lastTradedValueId = values[i].id;
+                     ENUM_ORDER_TYPE spikeLimitType = (signalDir == 1) ? ORDER_TYPE_SELL_LIMIT : ORDER_TYPE_BUY_LIMIT;
+                     ENUM_ORDER_TYPE barcodeType    = (signalDir == 1) ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
 
-                  string dirName = (signalDir == 1) ? "SELL GOLD (Strong USD)" : "BUY GOLD (Weak USD)";
-                  PrintFormat("🚀 [AUTO-PILOT ALERT TRIGGERED]: %s | Direction: %s | Actual: %.2f vs Forecast: %.2f", 
-                              ev.name, dirName, actual, bench);
+                     string dirName = (signalDir == 1) ? "SELL GOLD (Strong USD)" : "BUY GOLD (Weak USD)";
+                     PrintFormat("🚀 [AUTO-PILOT ALERT TRIGGERED]: %s | Direction: %s | Actual: %.2f vs Forecast: %.2f", 
+                                 ev.name, dirName, actual, bench);
 
-                  if(InpEnableAudioAlert)
-                  {
-                     Alert(StringFormat("🤖 AUTO-PILOT TRIGGERED: %s -> %s!", ev.name, dirName));
+                     if(InpEnableAudioAlert)
+                     {
+                        Alert(StringFormat("🤖 AUTO-PILOT TRIGGERED: %s -> %s!", ev.name, dirName));
+                     }
+
+                     // Step 1: Immediately arm 10 Spike Limits across the manipulation wick depth
+                     if(InpAutoArmLimits)
+                     {
+                        ArmSpikeLimits(spikeLimitType);
+                     }
+
+                     // Step 2: Schedule the post-spike Barcode market blast
+                     if(InpAutoBarcode)
+                     {
+                        g_signalTriggerTime = TimeCurrent();
+                        g_lastWaveTime = 0;
+                        g_wavesFired = 0;
+                        g_pendingBarcodeType = barcodeType;
+                        g_barcodePending = true;
+                        PrintFormat("⏳ Post-spike Barcode armed: Will fire %d barcode waves (First wave in %d seconds) in direction %s...", 
+                                    InpBarcodeWaveCount, InpBarcodeDelaySecs, dirName);
+                     }
+                     return;
                   }
-
-                  // Step 1: Immediately arm 10 Spike Limits across the manipulation wick depth
-                  if(InpAutoArmLimits)
-                  {
-                     ArmSpikeLimits(spikeLimitType);
-                  }
-
-                  // Step 2: Schedule the post-spike Barcode market blast
-                  if(InpAutoBarcode)
-                  {
-                     g_signalTriggerTime = TimeCurrent();
-                     g_lastWaveTime = 0;
-                     g_wavesFired = 0;
-                     g_pendingBarcodeType = barcodeType;
-                     g_barcodePending = true;
-                     PrintFormat("⏳ Post-spike Barcode armed: Will fire %d barcode waves (First wave in %d seconds) in direction %s...", 
-                                 InpBarcodeWaveCount, InpBarcodeDelaySecs, dirName);
-                  }
-                  return;
                }
             }
          }
       }
    }
    
-   // Fallback when standing by
-   g_activeNewsName = "Standby (Pre-News)";
-   g_activeTier = "STANDARD";
-   g_activeSpikeOffset = InpFallbackSpikeDist;
-   g_activeTPDist = InpFallbackTPDist;
+   if(!eventFound)
+   {
+      // Fallback when standing by
+      g_activeNewsName = "Standby (Pre-News)";
+      g_activeTier = "STANDARD";
+      g_activeSpikeOffset = InpFallbackSpikeDist;
+      g_activeTPDist = InpFallbackTPDist;
+   }
 }
 
 void CheckAutoBarcodeTimer()
@@ -416,8 +427,6 @@ void OnDeinit(const int reason)
    ObjectDelete(0, "BTN_KLIMIT");
    ObjectDelete(0, "BTN_LLIMIT");
    ObjectDelete(0, "BTN_CLOSE");
-   ObjectDelete(0, "BTN_TEST_BUY");
-   ObjectDelete(0, "BTN_TEST_SELL");
    ObjectDelete(0, "LBL_STATUS");
    ChartRedraw(0);
 }
@@ -471,16 +480,6 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       {
          ExecuteEmergencyClose();
          ObjectSetInteger(0, "BTN_CLOSE", OBJPROP_STATE, false);
-      }
-      else if(sparam == "BTN_TEST_BUY")
-      {
-         SimulateLiveNewsTest(-1); // Simulate Weak USD -> BUY GOLD
-         ObjectSetInteger(0, "BTN_TEST_BUY", OBJPROP_STATE, false);
-      }
-      else if(sparam == "BTN_TEST_SELL")
-      {
-         SimulateLiveNewsTest(1);  // Simulate Strong USD -> SELL GOLD
-         ObjectSetInteger(0, "BTN_TEST_SELL", OBJPROP_STATE, false);
       }
       UpdateHUDStatus();
    }
@@ -710,32 +709,4 @@ void ExecuteEmergencyClose()
    }
 
    Alert(StringFormat("⚡ NON-BLOCKING KILL SWITCH: %d close orders broadcast instantly to broker on %s!", fired, _Symbol));
-}
-
-// Live simulation testing function: triggers the entire auto-pilot pipeline without waiting for scheduled news!
-void SimulateLiveNewsTest(int direction)
-{
-   string dirStr = (direction == 1) ? "SELL GOLD (Simulated Strong USD Beat)" : "BUY GOLD (Simulated Weak USD Miss)";
-   ENUM_ORDER_TYPE spikeLimitType = (direction == 1) ? ORDER_TYPE_SELL_LIMIT : ORDER_TYPE_BUY_LIMIT;
-   ENUM_ORDER_TYPE barcodeType    = (direction == 1) ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
-
-   PrintFormat("🧪 [LIVE SIMULATION TEST INITIATED]: %s", dirStr);
-   Alert(StringFormat("🧪 SIMULATING LIVE RELEASE: %s!", dirStr));
-
-   // Step 1: Immediately arm 10 Spike Limits across the manipulation wick depth
-   if(InpAutoArmLimits)
-   {
-      ArmSpikeLimits(spikeLimitType);
-   }
-
-   // Step 2: Schedule the post-spike 2-wave Barcode blast
-   if(InpAutoBarcode)
-   {
-      g_signalTriggerTime = TimeCurrent();
-      g_lastWaveTime = 0;
-      g_wavesFired = 0;
-      g_pendingBarcodeType = barcodeType;
-      g_barcodePending = true;
-      PrintFormat("⏳ [SIMULATION]: Firing Wave 1 Barcode in %d seconds, followed by equity-unlocked Wave 2...", InpBarcodeDelaySecs);
-   }
 }

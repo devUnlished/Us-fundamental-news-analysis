@@ -35,10 +35,12 @@ void OnTimer()
    g_lastCheckTime = now;
 
    MqlCalendarValue values[];
-   datetime fromTime = now - 60;
-   datetime toTime = now + 60;
+   datetime fromTime = now - 600;
+   datetime toTime = now + 43200;
 
    int count = CalendarValueHistory(values, fromTime, toTime, "US");
+   bool signalFired = false;
+
    if(count > 0)
    {
       for(int i = 0; i < count; i++)
@@ -49,6 +51,29 @@ void OnTimer()
             if(CalendarEventById(values[i].event_id, event))
             {
                EvaluateNews(event.name, (double)values[i].actual_value, (double)values[i].forecast_value, (double)values[i].prev_value);
+               signalFired = true;
+               break;
+            }
+         }
+      }
+
+      // If no actual value released yet, preview the upcoming headline
+      if(!signalFired && g_lastSignal == "STANDBY")
+      {
+         for(int i = 0; i < count; i++)
+         {
+            MqlCalendarEvent event;
+            if(CalendarEventById(values[i].event_id, event))
+            {
+               string low = event.name; StringToLower(low);
+               if(StringFind(low, "interest rate") >= 0 || StringFind(low, "fomc") >= 0 ||
+                  StringFind(low, "federal funds") >= 0 || StringFind(low, "fed funds") >= 0)
+               {
+                  double fcast = (double)values[i].forecast_value;
+                  string info = (fcast != WRONG_VALUE) ? StringFormat("Upcoming FOMC Rate Decision (Exp: %.2f%%)", fcast) : "Upcoming: FOMC Rate Decision";
+                  ObjectSetString(0, "NewsSniper_Info", OBJPROP_TEXT, info);
+                  break;
+               }
             }
          }
       }
@@ -68,10 +93,11 @@ void EvaluateNews(string name, double actual, double forecast, double prev)
    // Tier 1 & 2 US Market Shakers
    if(StringFind(lowerName, "nonfarm") >= 0 || StringFind(lowerName, "non farm") >= 0 ||
       StringFind(lowerName, "cpi") >= 0 || StringFind(lowerName, "pce") >= 0 ||
-      StringFind(lowerName, "fed funds") >= 0 || StringFind(lowerName, "interest rate") >= 0 ||
-      StringFind(lowerName, "fomc") >= 0 || StringFind(lowerName, "retail sales") >= 0 ||
-      StringFind(lowerName, "gdp") >= 0 || StringFind(lowerName, "pmi") >= 0 ||
-      StringFind(lowerName, "ppi") >= 0 || StringFind(lowerName, "jolts") >= 0)
+      StringFind(lowerName, "fed funds") >= 0 || StringFind(lowerName, "federal funds") >= 0 ||
+      StringFind(lowerName, "interest rate") >= 0 || StringFind(lowerName, "fomc") >= 0 || 
+      StringFind(lowerName, "retail sales") >= 0 || StringFind(lowerName, "gdp") >= 0 || 
+      StringFind(lowerName, "pmi") >= 0 || StringFind(lowerName, "ppi") >= 0 || 
+      StringFind(lowerName, "jolts") >= 0)
    {
       direction = 1; // Higher -> Strong USD -> Sell Gold
    }
@@ -106,7 +132,7 @@ void CreateHUD()
    if(!InpShowDashboard) return;
 
    int startX = 20;
-   int startY = 285; // Cleanly positioned below AllInOneNewsTerminal's new test row & status
+   int startY = 245; // Cleanly positioned below AllInOneNewsTerminal's status row
    int width = 286;  // Matches total width of AllInOneNewsTerminal buttons
    int height = 75;
 
