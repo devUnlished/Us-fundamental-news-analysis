@@ -224,9 +224,10 @@ void CalibrateNewsTargets()
             if(CalendarEventById(values[i].event_id, ev))
             {
                string low = ev.name; StringToLower(low);
-               if(StringFind(low, "retail") >= 0 || StringFind(low, "fomc") >= 0 ||
-                  StringFind(low, "interest rate") >= 0 || StringFind(low, "federal funds") >= 0 ||
-                  StringFind(low, "cpi") >= 0 || StringFind(low, "nonfarm") >= 0)
+               if(StringFind(low, "fomc") >= 0 || StringFind(low, "interest rate") >= 0 || 
+                  StringFind(low, "federal funds") >= 0 || StringFind(low, "fed funds") >= 0 ||
+                  StringFind(low, "cpi") >= 0 || StringFind(low, "consumer price") >= 0 ||
+                  StringFind(low, "nonfarm") >= 0 || StringFind(low, "non farm") >= 0)
                {
                   targetIdx = i;
                   break;
@@ -246,9 +247,10 @@ void CalibrateNewsTargets()
                if(CalendarEventById(values[i].event_id, ev))
                {
                   string low = ev.name; StringToLower(low);
-                  if(StringFind(low, "retail") >= 0 || StringFind(low, "fomc") >= 0 ||
-                     StringFind(low, "interest rate") >= 0 || StringFind(low, "federal funds") >= 0 ||
-                     StringFind(low, "cpi") >= 0 || StringFind(low, "nonfarm") >= 0)
+                  if(StringFind(low, "fomc") >= 0 || StringFind(low, "interest rate") >= 0 || 
+                     StringFind(low, "federal funds") >= 0 || StringFind(low, "fed funds") >= 0 ||
+                     StringFind(low, "cpi") >= 0 || StringFind(low, "consumer price") >= 0 ||
+                     StringFind(low, "nonfarm") >= 0 || StringFind(low, "non farm") >= 0)
                   {
                      if(nearestTime == 0 || values[i].time < nearestTime)
                      {
@@ -293,16 +295,8 @@ void CalibrateNewsTargets()
 
             bool isTarget = false;
 
-            if(StringFind(low, "retail") >= 0)
-            {
-               g_activeNewsName = "Retail Sales (MoM)";
-               g_activeTier = "SOLID"; 
-               g_activeSpikeOffset = 16.0; // $16.00 (160 pip wick)
-               g_activeTPDist = 35.0;      // $35.00 (350 pip TP)
-               isTarget = true;
-            }
-            else if(StringFind(low, "interest rate") >= 0 || StringFind(low, "fomc") >= 0 || 
-                    StringFind(low, "federal funds") >= 0 || StringFind(low, "fed funds") >= 0)
+            if(StringFind(low, "interest rate") >= 0 || StringFind(low, "fomc") >= 0 || 
+               StringFind(low, "federal funds") >= 0 || StringFind(low, "fed funds") >= 0)
             {
                g_activeNewsName = "FOMC Rate Decision";
                g_activeTier = "BLOWOUT"; 

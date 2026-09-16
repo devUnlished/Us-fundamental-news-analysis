@@ -41,19 +41,15 @@ datetime NormalizeToGMT(datetime eventTime)
 
 bool IsMarketShaker(string lowerName)
 {
-   return (StringFind(lowerName, "retail") >= 0 ||
-           StringFind(lowerName, "interest rate") >= 0 ||
+   // Strictly The Big Three: FOMC / Fed Interest Rate, Nonfarm Payrolls (NFP), Consumer Price Index (CPI)
+   return (StringFind(lowerName, "interest rate") >= 0 ||
            StringFind(lowerName, "federal funds") >= 0 ||
            StringFind(lowerName, "fed funds") >= 0 ||
            StringFind(lowerName, "fomc") >= 0 ||
            StringFind(lowerName, "nonfarm") >= 0 ||
            StringFind(lowerName, "non farm") >= 0 ||
            StringFind(lowerName, "cpi") >= 0 ||
-           StringFind(lowerName, "consumer price") >= 0 ||
-           StringFind(lowerName, "pce") >= 0 ||
-           StringFind(lowerName, "gdp") >= 0 ||
-           StringFind(lowerName, "unemployment rate") >= 0 ||
-           StringFind(lowerName, "jobless claims") >= 0);
+           StringFind(lowerName, "consumer price") >= 0);
 }
 
 int OnInit()
@@ -253,6 +249,11 @@ void ProcessLiveRelease(const MqlCalendarEvent &ev, const MqlCalendarValue &val,
          PrintFormat("🟢 [NEWS SNIPER GMT+2]: %s -> BUY GOLD! Actual: %.2f vs Exp: %.2f", ev.name, actual, bench);
       }
    }
+   else
+   {
+      // In-Line / Neutral
+      UpdateHUD(C'203,213,225', "⚪ IN-LINE / NEUTRAL (NO EDGE)", headline, detail);
+   }
 }
 
 void CreateHUD()
@@ -260,7 +261,7 @@ void CreateHUD()
    if(!InpShowDashboard) return;
 
    int startX = 20;
-   int startY = 245; // Stacks flush beneath AllInOneNewsTerminal
+   int startY = 268; // Stacks flush beneath AllInOneNewsTerminal Row 5 status display
    int width  = 286; // Exact matching width of AllInOneNewsTerminal buttons
    int height = 80;
 
