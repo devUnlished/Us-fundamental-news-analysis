@@ -56,6 +56,7 @@ bool   g_barcodePending = false;
 void ExecuteBarcode(ENUM_ORDER_TYPE orderType, double customLot = 0.0);
 void ArmSpikeLimits(ENUM_ORDER_TYPE orderType);
 bool CanAffordBarcode(ENUM_ORDER_TYPE orderType, double &outLotPerStripe);
+void SimulateLiveNewsTest(int direction); // +1 = Sell Gold, -1 = Buy Gold
 
 void CreateButton(string name, string text, int x, int y, int w, int h, color bg, color fg, int fontSize = 9)
 {
@@ -160,13 +161,19 @@ void DrawHUD()
    int r4 = r3 + 34;
    CreateButton("BTN_CLOSE", "✖ PANIC CLOSE ALL [X]", startX, r4, totalW, 38, C'185,28,28', clrWhite);
 
-   // Row 5: Dynamic Intelligence Display
+   // Row 5: Live Test Simulation Trigger Buttons
    int r5 = r4 + 42;
+   int halfW = (totalW - gap) / 2;
+   CreateButton("BTN_TEST_BUY",  "⚡ TEST LIVE: BUY GOLD",  startX, r5, halfW, 26, C'30,41,59', C'52,211,153', 8);
+   CreateButton("BTN_TEST_SELL", "⚡ TEST LIVE: SELL GOLD", startX + halfW + gap, r5, halfW, 26, C'30,41,59', C'248,113,113', 8);
+
+   // Row 6: Dynamic Intelligence Display
+   int r6 = r5 + 30;
    ObjectDelete(0, "LBL_STATUS");
    ObjectCreate(0, "LBL_STATUS", OBJ_LABEL, 0, 0, 0);
    ObjectSetInteger(0, "LBL_STATUS", OBJPROP_CORNER, CORNER_LEFT_UPPER);
    ObjectSetInteger(0, "LBL_STATUS", OBJPROP_XDISTANCE, startX);
-   ObjectSetInteger(0, "LBL_STATUS", OBJPROP_YDISTANCE, r5);
+   ObjectSetInteger(0, "LBL_STATUS", OBJPROP_YDISTANCE, r6);
    ObjectSetString(0, "LBL_STATUS", OBJPROP_FONT, "Segoe UI");
    ObjectSetInteger(0, "LBL_STATUS", OBJPROP_FONTSIZE, 8);
    ObjectSetInteger(0, "LBL_STATUS", OBJPROP_COLOR, C'148,163,184');
@@ -409,6 +416,8 @@ void OnDeinit(const int reason)
    ObjectDelete(0, "BTN_KLIMIT");
    ObjectDelete(0, "BTN_LLIMIT");
    ObjectDelete(0, "BTN_CLOSE");
+   ObjectDelete(0, "BTN_TEST_BUY");
+   ObjectDelete(0, "BTN_TEST_SELL");
    ObjectDelete(0, "LBL_STATUS");
    ChartRedraw(0);
 }
@@ -462,6 +471,16 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       {
          ExecuteEmergencyClose();
          ObjectSetInteger(0, "BTN_CLOSE", OBJPROP_STATE, false);
+      }
+      else if(sparam == "BTN_TEST_BUY")
+      {
+         SimulateLiveNewsTest(-1); // Simulate Weak USD -> BUY GOLD
+         ObjectSetInteger(0, "BTN_TEST_BUY", OBJPROP_STATE, false);
+      }
+      else if(sparam == "BTN_TEST_SELL")
+      {
+         SimulateLiveNewsTest(1);  // Simulate Strong USD -> SELL GOLD
+         ObjectSetInteger(0, "BTN_TEST_SELL", OBJPROP_STATE, false);
       }
       UpdateHUDStatus();
    }
@@ -691,4 +710,32 @@ void ExecuteEmergencyClose()
    }
 
    Alert(StringFormat("⚡ NON-BLOCKING KILL SWITCH: %d close orders broadcast instantly to broker on %s!", fired, _Symbol));
+}
+
+// Live simulation testing function: triggers the entire auto-pilot pipeline without waiting for scheduled news!
+void SimulateLiveNewsTest(int direction)
+{
+   string dirStr = (direction == 1) ? "SELL GOLD (Simulated Strong USD Beat)" : "BUY GOLD (Simulated Weak USD Miss)";
+   ENUM_ORDER_TYPE spikeLimitType = (direction == 1) ? ORDER_TYPE_SELL_LIMIT : ORDER_TYPE_BUY_LIMIT;
+   ENUM_ORDER_TYPE barcodeType    = (direction == 1) ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
+
+   PrintFormat("🧪 [LIVE SIMULATION TEST INITIATED]: %s", dirStr);
+   Alert(StringFormat("🧪 SIMULATING LIVE RELEASE: %s!", dirStr));
+
+   // Step 1: Immediately arm 10 Spike Limits across the manipulation wick depth
+   if(InpAutoArmLimits)
+   {
+      ArmSpikeLimits(spikeLimitType);
+   }
+
+   // Step 2: Schedule the post-spike 2-wave Barcode blast
+   if(InpAutoBarcode)
+   {
+      g_signalTriggerTime = TimeCurrent();
+      g_lastWaveTime = 0;
+      g_wavesFired = 0;
+      g_pendingBarcodeType = barcodeType;
+      g_barcodePending = true;
+      PrintFormat("⏳ [SIMULATION]: Firing Wave 1 Barcode in %d seconds, followed by equity-unlocked Wave 2...", InpBarcodeDelaySecs);
+   }
 }

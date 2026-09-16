@@ -106,7 +106,7 @@ void CreateHUD()
    if(!InpShowDashboard) return;
 
    int startX = 20;
-   int startY = 255; // Directly below AllInOneNewsTerminal (which ends around Y=240)
+   int startY = 285; // Cleanly positioned below AllInOneNewsTerminal's new test row & status
    int width = 286;  // Matches total width of AllInOneNewsTerminal buttons
    int height = 75;
 
