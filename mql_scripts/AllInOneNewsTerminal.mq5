@@ -112,28 +112,28 @@ void DrawHUD()
    double scale = (InpUIScale >= 0.7 && InpUIScale <= 3.0) ? InpUIScale : 1.0;
    int startX = InpStartX;
    int startY = InpStartY;
-   int pad = (int)(14 * scale);
-   int gap = (int)(8 * scale);
+   int pad = (int)(20 * scale);
+   int gap = (int)(10 * scale);
 
-   int totalW = (int)(470 * scale);
+   int totalW = (int)(560 * scale);
    int btnW   = (totalW - gap) / 2;
 
-   int fsTitle = MathMax(9, (int)(11 * scale));
-   int fsSub   = MathMax(8, (int)(10 * scale));
-   int fsBtn   = MathMax(9, (int)(11 * scale));
-   int fsLot   = MathMax(10, (int)(12 * scale));
-   int fsSmall = MathMax(8, (int)(10 * scale));
+   int fsTitle = MathMax(8, (int)(10 * scale));
+   int fsSub   = MathMax(8, (int)(9 * scale));
+   int fsBtn   = MathMax(8, (int)(10 * scale));
+   int fsLot   = MathMax(9, (int)(11 * scale));
+   int fsSmall = MathMax(8, (int)(9 * scale));
    int fsStatus= MathMax(8, (int)(9 * scale));
 
-   // Calculate Vertical Offsets
+   // Calculate Vertical Offsets with generous vertical spacing
    int r0_title_y = startY + (int)(2 * scale);
-   int r0_sub_y   = startY + (int)(24 * scale);
+   int r0_sub_y   = startY + (int)(22 * scale);
 
-   int r1_y   = startY + (int)(50 * scale);
+   int r1_y   = startY + (int)(48 * scale);
    int r1_h   = (int)(36 * scale);
 
    int r2_y   = r1_y + r1_h + gap;
-   int r2_h   = (int)(32 * scale);
+   int r2_h   = (int)(34 * scale);
 
    int r3_y   = r2_y + r2_h + gap;
    int r3_h   = (int)(44 * scale);
@@ -147,7 +147,7 @@ void DrawHUD()
    int r6_y   = r5_y + r5_h + gap;
    int r6_h   = (int)(44 * scale);
 
-   int r7_y   = r6_y + r6_h + (int)(10 * scale);
+   int r7_y   = r6_y + r6_h + (int)(12 * scale);
    int totalH = (r7_y - startY) + (int)(18 * scale) + pad;
 
    // Purge legacy elements
@@ -167,11 +167,11 @@ void DrawHUD()
    ObjectSetInteger(0, "BOX_MAIN_BG", OBJPROP_BORDER_COLOR, C'51,65,85'); // Crisp border
    ObjectSetInteger(0, "BOX_MAIN_BG", OBJPROP_SELECTABLE, false);
 
-   // Row 0: Header Text (Sits cleanly on container card)
+   // Row 0: Header Text (Sits cleanly on container card with plenty of room)
    ObjectDelete(0, "LBL_AUTOBOT_BADGE");
    ObjectCreate(0, "LBL_AUTOBOT_BADGE", OBJ_LABEL, 0, 0, 0);
    ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_CORNER, CORNER_LEFT_UPPER);
-   ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_XDISTANCE, startX + (int)(2 * scale));
+   ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_XDISTANCE, startX);
    ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_YDISTANCE, r0_title_y);
    ObjectSetString(0, "LBL_AUTOBOT_BADGE", OBJPROP_FONT, "Segoe UI Bold");
    ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_FONTSIZE, fsTitle);
@@ -189,7 +189,7 @@ void DrawHUD()
    ObjectDelete(0, "LBL_AUTOBOT_SIGNAL");
    ObjectCreate(0, "LBL_AUTOBOT_SIGNAL", OBJ_LABEL, 0, 0, 0);
    ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_CORNER, CORNER_LEFT_UPPER);
-   ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_XDISTANCE, startX + (int)(2 * scale));
+   ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_XDISTANCE, startX);
    ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_YDISTANCE, r0_sub_y);
    ObjectSetString(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_FONT, "Segoe UI");
    ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_FONTSIZE, fsSub);
@@ -205,9 +205,9 @@ void DrawHUD()
    }
 
    // Row 1: Lot Selector & Presets
-   int btnMinusW = (int)(36 * scale);
-   int edtLotW   = (int)(82 * scale);
-   int btnPlusW  = (int)(36 * scale);
+   int btnMinusW = (int)(38 * scale);
+   int edtLotW   = (int)(80 * scale);
+   int btnPlusW  = (int)(38 * scale);
    CreateButton("BTN_LOT_MINUS", "-", startX, r1_y, btnMinusW, r1_h, C'30,41,59', clrWhite, fsLot, C'51,65,85');
    CreateEditBox("EDT_LOT_SIZE", DoubleToString(g_currentLot, 2), startX + btnMinusW + 4, r1_y, edtLotW, r1_h, fsLot);
    CreateButton("BTN_LOT_PLUS", "+", startX + btnMinusW + edtLotW + 8, r1_y, btnPlusW, r1_h, C'30,41,59', clrWhite, fsLot, C'51,65,85');
@@ -235,14 +235,14 @@ void DrawHUD()
    CreateButton("BTN_BUY",  "BUY BARCODE [B]",  startX,            r3_y, btnW, r3_h, C'22,101,52', clrWhite, fsBtn, C'34,197,94');
    CreateButton("BTN_SELL", "SELL BARCODE [S]", startX + btnW + gap, r3_y, btnW, r3_h, C'153,27,27', clrWhite, fsBtn, C'239,68,68');
 
-   // Row 4: Limit Sniper Buttons
-   string kTxt = StringFormat("BUY LIMIT (-$%.0f)", g_activeSpikeOffset);
-   string lTxt = StringFormat("SELL LIMIT (+$%.0f)", g_activeSpikeOffset);
+   // Row 4: Limit Sniper Buttons (with K and L keys explicitly labelled)
+   string kTxt = StringFormat("K: BUY LIMIT (-$%.0f)", g_activeSpikeOffset);
+   string lTxt = StringFormat("L: SELL LIMIT (+$%.0f)", g_activeSpikeOffset);
    CreateButton("BTN_KLIMIT", kTxt, startX,            r4_y, btnW, r4_h, C'12,74,110', C'56,189,248', fsBtn, C'14,116,144');
    CreateButton("BTN_LLIMIT", lTxt, startX + btnW + gap, r4_y, btnW, r4_h, C'127,29,29', C'248,113,113', fsBtn, C'185,28,28');
 
    // Row 5: Straddle Stops (G key)
-   string straddleTxt = StringFormat("STRADDLE BUY/SELL STOPS (±%.0f p)", InpStopDistancePips);
+   string straddleTxt = StringFormat("STRADDLE BUY/SELL STOPS [G] (±%.0f p)", InpStopDistancePips);
    CreateButton("BTN_STRADDLE", straddleTxt, startX, r5_y, totalW, r5_h, C'66,50,15', C'250,204,21', fsBtn, C'161,98,7');
 
    // Row 6: Panic Close Kill Switch
@@ -252,7 +252,7 @@ void DrawHUD()
    ObjectDelete(0, "LBL_STATUS");
    ObjectCreate(0, "LBL_STATUS", OBJ_LABEL, 0, 0, 0);
    ObjectSetInteger(0, "LBL_STATUS", OBJPROP_CORNER, CORNER_LEFT_UPPER);
-   ObjectSetInteger(0, "LBL_STATUS", OBJPROP_XDISTANCE, startX + (int)(2 * scale));
+   ObjectSetInteger(0, "LBL_STATUS", OBJPROP_XDISTANCE, startX);
    ObjectSetInteger(0, "LBL_STATUS", OBJPROP_YDISTANCE, r7_y);
    ObjectSetString(0, "LBL_STATUS", OBJPROP_FONT, "Segoe UI");
    ObjectSetInteger(0, "LBL_STATUS", OBJPROP_FONTSIZE, fsStatus);
@@ -516,9 +516,9 @@ void UpdateHUDStatus()
    CalibrateNewsTargets();
    CheckAutoBarcodeTimer();
 
-   // Update Limit button texts with live calibrated spike wick distances (No "K:" or "L:" prefix)
-   ObjectSetString(0, "BTN_KLIMIT", OBJPROP_TEXT, StringFormat("BUY LIMIT (-$%.0f)", g_activeSpikeOffset));
-   ObjectSetString(0, "BTN_LLIMIT", OBJPROP_TEXT, StringFormat("SELL LIMIT (+$%.0f)", g_activeSpikeOffset));
+   // Update Limit button texts with live calibrated spike wick distances (K and L hotkeys)
+   ObjectSetString(0, "BTN_KLIMIT", OBJPROP_TEXT, StringFormat("K: BUY LIMIT (-$%.0f)", g_activeSpikeOffset));
+   ObjectSetString(0, "BTN_LLIMIT", OBJPROP_TEXT, StringFormat("L: SELL LIMIT (+$%.0f)", g_activeSpikeOffset));
 
    if(InpEnableAutoPilot)
    {
@@ -550,7 +550,7 @@ void UpdateHUDStatus()
    // Buy / Sell button labels - Clean, exact match to Image 3
    ObjectSetString(0, "BTN_BUY", OBJPROP_TEXT, "BUY BARCODE [B]");
    ObjectSetString(0, "BTN_SELL", OBJPROP_TEXT, "SELL BARCODE [S]");
-   ObjectSetString(0, "BTN_STRADDLE", OBJPROP_TEXT, StringFormat("STRADDLE BUY/SELL STOPS (±%.0f p)", InpStopDistancePips));
+   ObjectSetString(0, "BTN_STRADDLE", OBJPROP_TEXT, StringFormat("STRADDLE BUY/SELL STOPS [G] (±%.0f p)", InpStopDistancePips));
    ObjectSetString(0, "BTN_CLOSE", OBJPROP_TEXT, "[X] PANIC CLOSE ALL POSITIONS");
 
    // Active button colors
