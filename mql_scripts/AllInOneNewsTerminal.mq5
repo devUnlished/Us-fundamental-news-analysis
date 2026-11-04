@@ -76,9 +76,11 @@ bool            g_barcodeActive = false;
 ENUM_ORDER_TYPE g_barcodeType   = WRONG_VALUE;
 int             g_barcodeTarget = 0;
 int             g_barcodeFilled = 0;
+int             g_barcodeBaseOpenCount = 0;
 datetime        g_barcodeStartTime = 0;
 datetime        g_barcodeLastFireTime = 0;
 
+int  GetBarcodePositionsCount(ENUM_POSITION_TYPE targetPosType = WRONG_VALUE);
 void ExecuteBarcode(ENUM_ORDER_TYPE orderType, double customLot = 0.0);
 void StartBarcodeEngine(ENUM_ORDER_TYPE orderType, int targetStripes, double lot);
 void ProcessBarcodeEngine();
@@ -567,8 +569,11 @@ void UpdateHUDStatus()
 
    if(g_barcodeActive)
    {
-      string info = StringFormat("⚡ FILLING BARCODE: %d/%d stripes at %.2f | Free Margin: $%.0f | TP: +$%.0f", 
-                                 g_barcodeFilled, g_barcodeTarget, g_currentLot, AccountInfoDouble(ACCOUNT_MARGIN_FREE), g_activeTPDist);
+      ENUM_POSITION_TYPE targetPosType = (g_barcodeType == ORDER_TYPE_BUY) ? POSITION_TYPE_BUY : POSITION_TYPE_SELL;
+      int liveStripes = GetBarcodePositionsCount(targetPosType);
+      string dirStr = (g_barcodeType == ORDER_TYPE_BUY) ? "BUY" : "SELL";
+      string info = StringFormat("⚡ FILLING %s: %d/%d open | Free Margin: $%.1f | TP: +$%.0f", 
+                                 dirStr, liveStripes, g_barcodeTarget, AccountInfoDouble(ACCOUNT_MARGIN_FREE), g_activeTPDist);
       ObjectSetString(0, "LBL_STATUS", OBJPROP_TEXT, info);
       ObjectSetInteger(0, "LBL_STATUS", OBJPROP_COLOR, C'250,204,21'); // Amber yellow
    }
@@ -662,7 +667,7 @@ int OnInit()
 {
    trade.SetExpertMagicNumber(999111);
    trade.SetDeviationInPoints(InpSlippagePoints);
-   trade.SetTypeFilling(ORDER_FILLING_IOC);
+   trade.SetTypeFilling(GetFillingMode());
    g_currentLot = InpDefaultLot;
    g_currentStripes = (InpNumberOfStripes > 0) ? InpNumberOfStripes : 10;
    g_activeTPDist = InpFallbackTPDist;
@@ -846,40 +851,89 @@ ENUM_ORDER_TYPE_FILLING GetFillingMode()
    return ORDER_FILLING_RETURN;
 }
 
+int GetBarcodePositionsCount(ENUM_POSITION_TYPE targetPosType = WRONG_VALUE)
+{
+   int count = 0;
+   int total = PositionsTotal();
+   for(int i = total - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket > 0)
+      {
+         if(PositionGetString(POSITION_SYMBOL) == _Symbol &&
+            PositionGetInteger(POSITION_MAGIC) == 999111)
+         {
+            if(targetPosType == WRONG_VALUE || PositionGetInteger(POSITION_TYPE) == targetPosType)
+            {
+               count++;
+            }
+         }
+      }
+   }
+   return count;
+}
+
 void StartBarcodeEngine(ENUM_ORDER_TYPE orderType, int targetStripes, double lot)
 {
    g_barcodeActive = true;
    g_barcodeType   = orderType;
    g_barcodeTarget = (targetStripes > 0) ? targetStripes : 10;
    g_barcodeFilled = 0;
+   
+   ENUM_POSITION_TYPE targetPosType = (orderType == ORDER_TYPE_BUY) ? POSITION_TYPE_BUY : POSITION_TYPE_SELL;
+   g_barcodeBaseOpenCount = GetBarcodePositionsCount(targetPosType);
+   
    g_barcodeStartTime = TimeCurrent();
    g_barcodeLastFireTime = 0;
 
-   string dir = (orderType == ORDER_TYPE_BUY) ? "BUY" : "SELL";
-   PrintFormat("🚀 [BARCODE ENGINE STARTED]: %s %d stripes at %.2f lots | TP: +$%.0f on %s",
-               dir, g_barcodeTarget, lot, g_activeTPDist, _Symbol);
+   trade.SetTypeFilling(GetFillingMode());
+   trade.SetExpertMagicNumber(999111);
+   trade.SetDeviationInPoints(InpSlippagePoints);
 
-   ProcessBarcodeEngine(); // Fire available initial stripes with zero delay
+   string dir = (orderType == ORDER_TYPE_BUY) ? "BUY" : "SELL";
+   PrintFormat("🚀 [BARCODE ENGINE STARTED]: %s %d stripes at %.2f lots | TP: +$%.0f on %s (Existing open: %d)",
+               dir, g_barcodeTarget, lot, g_activeTPDist, _Symbol, g_barcodeBaseOpenCount);
+
+   ProcessBarcodeEngine(); // Fire available initial stripes immediately
 }
 
 void ProcessBarcodeEngine()
 {
    if(!g_barcodeActive || g_barcodeType == WRONG_VALUE) return;
 
-   // Auto-timeout after 90 seconds of active trade monitoring
-   if(TimeCurrent() - g_barcodeStartTime > 90)
+   ENUM_POSITION_TYPE targetPosType = (g_barcodeType == ORDER_TYPE_BUY) ? POSITION_TYPE_BUY : POSITION_TYPE_SELL;
+   int liveStripes = GetBarcodePositionsCount(targetPosType);
+   int newlyOpened = liveStripes - g_barcodeBaseOpenCount;
+   if(newlyOpened < 0) newlyOpened = 0;
+
+   int currentProgress = MathMax(g_barcodeFilled, newlyOpened);
+
+   // Check if the user's stripe target has been completely achieved
+   if(currentProgress >= g_barcodeTarget)
    {
-      PrintFormat("⏱️ [BARCODE COMPLETE]: Active window finished. Filled %d/%d stripes on %s.", 
-                  g_barcodeFilled, g_barcodeTarget, _Symbol);
+      PrintFormat("🎉 [BARCODE FULLY FILLED]: All %d/%d stripes active on %s! Engine complete.", 
+                  currentProgress, g_barcodeTarget, _Symbol);
       g_barcodeActive = false;
+      UpdateHUDStatus();
       return;
    }
 
-   if(g_barcodeFilled >= g_barcodeTarget)
+   // If stripes were opened and now all stripes closed (e.g. hit TP or closed by trader), finish engine
+   if(g_barcodeFilled > 0 && liveStripes == 0)
    {
-      PrintFormat("🎉 [BARCODE FULLY FILLED]: All %d/%d stripes filled successfully on %s!", 
-                  g_barcodeFilled, g_barcodeTarget, _Symbol);
+      PrintFormat("🏁 [BARCODE FINISHED]: Open stripes closed/TP reached on %s. Disarming engine.", _Symbol);
       g_barcodeActive = false;
+      UpdateHUDStatus();
+      return;
+   }
+
+   // Active window timeout: 15 minutes for the news breakout momentum to play out
+   if(TimeCurrent() - g_barcodeStartTime > 900)
+   {
+      PrintFormat("⏱️ [BARCODE TIMEOUT]: Active window (15m) ended. Filled %d/%d stripes on %s.", 
+                  currentProgress, g_barcodeTarget, _Symbol);
+      g_barcodeActive = false;
+      UpdateHUDStatus();
       return;
    }
 
@@ -888,7 +942,7 @@ void ProcessBarcodeEngine()
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    double price = (g_barcodeType == ORDER_TYPE_SELL) ? bid : ask;
 
-   double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   // Margin calculation for 1 stripe of g_currentLot
    double reqMargin = 0.0;
    if(!OrderCalcMargin(g_barcodeType, _Symbol, g_currentLot, price, reqMargin) || reqMargin <= 0.0)
    {
@@ -897,79 +951,81 @@ void ProcessBarcodeEngine()
       reqMargin = (price * 100.0 * g_currentLot) / leverage;
    }
 
-   // Safety margin buffer ($2.00)
-   double safetyBuffer = 2.0;
+   double safetyBuffer = 1.50; // $1.50 margin buffer to prevent [No money] rejection
+   double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+
+   // If free margin cannot afford another stripe right now, wait for floating profit to expand margin!
    if(freeMargin < (reqMargin + safetyBuffer))
    {
-      // Free margin not enough yet for next stripe; waiting for profitable moves to unlock more margin!
       return;
    }
 
-   // Calculate how many stripes free margin can currently afford
+   trade.SetTypeFilling(GetFillingMode());
+   trade.SetExpertMagicNumber(999111);
+   trade.SetDeviationInPoints(InpSlippagePoints);
+
    int canAfford = (int)MathFloor((freeMargin - safetyBuffer) / reqMargin);
    if(canAfford <= 0) return;
 
-   int remaining = g_barcodeTarget - g_barcodeFilled;
-   int toFire = MathMin(canAfford, remaining);
-   toFire = MathMin(toFire, 10); // Batch size up to 10 for lightning concurrent dispatch
+   int remaining = g_barcodeTarget - currentProgress;
+   int toFireNow = MathMin(canAfford, remaining);
 
-   ENUM_ORDER_TYPE_FILLING fillingMode = GetFillingMode();
-   double tp = 0.0;
-   if(g_activeTPDist > 0.0)
+   int firedInThisBurst = 0;
+   for(int i = 0; i < toFireNow; i++)
    {
-      tp = (g_barcodeType == ORDER_TYPE_SELL) ? NormalizeDouble(bid - g_activeTPDist, digits) : NormalizeDouble(ask + g_activeTPDist, digits);
-   }
-
-   int batchSent = 0;
-   for(int i = 0; i < toFire; i++)
-   {
-      MqlTradeRequest request;
-      MqlTradeResult  result;
-      ZeroMemory(request);
-      ZeroMemory(result);
-
-      request.action       = TRADE_ACTION_DEAL;
-      request.symbol       = _Symbol;
-      request.volume       = g_currentLot;
-      request.type         = g_barcodeType;
-      request.price        = (g_barcodeType == ORDER_TYPE_SELL) ? SymbolInfoDouble(_Symbol, SYMBOL_BID) : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-      request.deviation    = InpSlippagePoints;
-      request.type_filling = fillingMode;
-      request.tp           = tp;
-      request.comment      = StringFormat("Barcode %d/%d", g_barcodeFilled + i + 1, g_barcodeTarget);
-      request.magic        = 999111;
-
-      // Asynchronous non-blocking dispatch
-      if(OrderSendAsync(request, result))
+      // Re-verify live free margin immediately before every trade dispatch
+      freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+      if(freeMargin < (reqMargin + safetyBuffer))
       {
-         batchSent++;
+         PrintFormat("⏳ [BARCODE MARGIN PAUSE]: Consumed available margin. %d/%d open. Waiting for floating profit to expand margin...",
+                     GetBarcodePositionsCount(targetPosType), g_barcodeTarget);
+         break;
+      }
+
+      ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+      double tp = 0.0;
+      if(g_activeTPDist > 0.0)
+      {
+         tp = (g_barcodeType == ORDER_TYPE_SELL) ? NormalizeDouble(bid - g_activeTPDist, digits) : NormalizeDouble(ask + g_activeTPDist, digits);
+      }
+
+      string comment = StringFormat("Barcode %d/%d", currentProgress + firedInThisBurst + 1, g_barcodeTarget);
+      bool ok = false;
+      if(g_barcodeType == ORDER_TYPE_BUY)
+         ok = trade.Buy(g_currentLot, _Symbol, ask, 0.0, tp, comment);
+      else
+         ok = trade.Sell(g_currentLot, _Symbol, bid, 0.0, tp, comment);
+
+      if(ok && (trade.ResultRetcode() == TRADE_RETCODE_DONE || trade.ResultRetcode() == TRADE_RETCODE_PLACED))
+      {
+         firedInThisBurst++;
+         g_barcodeFilled++;
+         g_barcodeLastFireTime = TimeCurrent();
       }
       else
       {
-         // Fallback sync deal if async unsupported
-         if(g_barcodeType == ORDER_TYPE_SELL)
-         {
-            if(trade.Sell(g_currentLot, _Symbol, bid, 0.0, tp, "Barcode Stripe")) batchSent++;
-         }
-         else
-         {
-            if(trade.Buy(g_currentLot, _Symbol, ask, 0.0, tp, "Barcode Stripe")) batchSent++;
-         }
+         uint ret = trade.ResultRetcode();
+         PrintFormat("⚠️ [BARCODE RETRY LATER]: Order send paused (code %u: %s). Free Margin: $%.2f",
+                     ret, trade.ResultRetcodeDescription(), AccountInfoDouble(ACCOUNT_MARGIN_FREE));
+         break;
       }
    }
 
-   if(batchSent > 0)
+   if(firedInThisBurst > 0)
    {
-      g_barcodeFilled += batchSent;
-      g_barcodeLastFireTime = TimeCurrent();
-      PrintFormat("⚡ [BARCODE BURST]: Fired %d stripes at %.2f lots | Total: %d/%d (Free Margin: $%.2f | TP: +$%.0f)",
-                  batchSent, g_currentLot, g_barcodeFilled, g_barcodeTarget, freeMargin, g_activeTPDist);
-   }
+      int currentOpen = GetBarcodePositionsCount(targetPosType);
+      PrintFormat("⚡ [BARCODE BURST]: Fired %d stripes! Current Open: %d/%d (Free Margin: $%.2f | TP: +$%.0f)",
+                  firedInThisBurst, currentOpen, g_barcodeTarget, AccountInfoDouble(ACCOUNT_MARGIN_FREE), g_activeTPDist);
+      UpdateHUDStatus();
 
-   if(g_barcodeFilled >= g_barcodeTarget)
-   {
-      PrintFormat("🎉 [BARCODE FULLY FILLED]: All %d/%d stripes completed on %s!", g_barcodeFilled, g_barcodeTarget, _Symbol);
-      g_barcodeActive = false;
+      if(currentOpen - g_barcodeBaseOpenCount >= g_barcodeTarget || g_barcodeFilled >= g_barcodeTarget)
+      {
+         PrintFormat("🎉 [BARCODE FULLY FILLED]: All %d/%d stripes successfully filled on %s!", 
+                     g_barcodeTarget, g_barcodeTarget, _Symbol);
+         g_barcodeActive = false;
+         UpdateHUDStatus();
+      }
    }
 }
 
@@ -1014,6 +1070,7 @@ void ArmSpikeLimits(ENUM_ORDER_TYPE orderType)
    int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
    datetime expiry = TimeCurrent() + (InpLimitExpiryMins * 60);
 
+   trade.SetExpertMagicNumber(999222);
    int placed = 0;
    for(int i = 0; i < numStripes; i++)
    {
@@ -1042,7 +1099,10 @@ void ArmSpikeLimits(ENUM_ORDER_TYPE orderType)
 void ExecuteEmergencyClose()
 {
    g_barcodeActive = false;
+   g_barcodeTarget = 0;
+   g_barcodeFilled = 0;
    DisarmStraddleWatch();
+   UpdateHUDStatus();
 
    int total = PositionsTotal();
    if(total == 0 && OrdersTotal() == 0) return;
