@@ -19,6 +19,12 @@ input bool     InpAutoCalibrateNews = true;    // Auto-calibrate Limit Distance 
 input double   InpFallbackSpikeDist = 18.0;    // Fallback Limit Offset in Gold $ ($18.00 = 180 pips)
 input double   InpFallbackTPDist    = 30.0;    // Fallback Take Profit in Gold $ ($30.00 = 300 pips)
 
+input group "=== STRADDLE STOPS (G KEY) ===";
+input double   InpStopDistancePips  = 50.0;    // Straddle Distance in Pips (50 pips = $5.00 on Gold)
+input double   InpStopTPDistancePips= 50.0;    // Take Profit in Pips (0 to use dynamic news TP)
+input double   InpStopSLDistancePips= 0.0;     // Stop Loss in Pips (0 for none)
+input int      InpStopExpiryMins    = 15;      // Expiration in minutes (0 for GTC)
+
 input group "=== SPIKE LIMITS ===";
 input double   InpMarginPercent     = 70.0;    // Margin Utilization % for Spike Limit size
 input int      InpNumberOfLimitStripes = 10;   // Divide total lot size into N split limit orders
@@ -38,8 +44,14 @@ input group "=== EMERGENCY CLOSE ===";
 input int      InpMaxRetries        = 50;      // Retry attempts on broker requote
 input int      InpSlippagePoints    = 300;     // Slippage allowance in points (30 pips)
 
+input group "=== UI CUSTOMIZATION ===";
+input double   InpUIScale           = 1.0;     // UI Scale Multiplier (1.0 = Standard, 1.2 = Large, 1.5 = 4K)
+input int      InpStartX            = 20;      // Panel X Position on Chart
+input int      InpStartY            = 30;      // Panel Y Position on Chart
+
 CTrade trade;
 double g_currentLot = 0.05;
+int    g_currentStripes = 10;
 string g_activeNewsName = "Standby (Normal)";
 double g_activeSpikeOffset = 18.00; // in Gold dollars ($18.00 = 180 pips)
 double g_activeTPDist = 30.00;      // in Gold dollars ($30.00 = 300 pips)
@@ -55,9 +67,11 @@ bool   g_barcodePending = false;
 
 void ExecuteBarcode(ENUM_ORDER_TYPE orderType, double customLot = 0.0);
 void ArmSpikeLimits(ENUM_ORDER_TYPE orderType);
+void ExecuteStraddleStops();
 bool CanAffordBarcode(ENUM_ORDER_TYPE orderType, double &outLotPerStripe);
+double GetPipSize();
 
-void CreateButton(string name, string text, int x, int y, int w, int h, color bg, color fg, int fontSize = 9)
+void CreateButton(string name, string text, int x, int y, int w, int h, color bg, color fg, int fontSize = 10, color border = clrNONE)
 {
    ObjectDelete(0, name);
    ObjectCreate(0, name, OBJ_BUTTON, 0, 0, 0);
@@ -67,15 +81,15 @@ void CreateButton(string name, string text, int x, int y, int w, int h, color bg
    ObjectSetInteger(0, name, OBJPROP_XSIZE, w);
    ObjectSetInteger(0, name, OBJPROP_YSIZE, h);
    ObjectSetString(0, name, OBJPROP_TEXT, text);
-   ObjectSetString(0, name, OBJPROP_FONT, "Segoe UI Semibold");
+   ObjectSetString(0, name, OBJPROP_FONT, "Segoe UI Bold");
    ObjectSetInteger(0, name, OBJPROP_FONTSIZE, fontSize);
    ObjectSetInteger(0, name, OBJPROP_COLOR, fg);
    ObjectSetInteger(0, name, OBJPROP_BGCOLOR, bg);
-   ObjectSetInteger(0, name, OBJPROP_BORDER_COLOR, clrNONE);
+   ObjectSetInteger(0, name, OBJPROP_BORDER_COLOR, border);
    ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
 }
 
-void CreateEditBox(string name, string text, int x, int y, int w, int h)
+void CreateEditBox(string name, string text, int x, int y, int w, int h, int fontSize = 12)
 {
    ObjectDelete(0, name);
    ObjectCreate(0, name, OBJ_EDIT, 0, 0, 0);
@@ -86,62 +100,99 @@ void CreateEditBox(string name, string text, int x, int y, int w, int h)
    ObjectSetInteger(0, name, OBJPROP_YSIZE, h);
    ObjectSetString(0, name, OBJPROP_TEXT, text);
    ObjectSetString(0, name, OBJPROP_FONT, "Segoe UI Bold");
-   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 11);
-   ObjectSetInteger(0, name, OBJPROP_COLOR, C'248,250,252');
-   ObjectSetInteger(0, name, OBJPROP_BGCOLOR, C'30,41,59');
-   ObjectSetInteger(0, name, OBJPROP_BORDER_COLOR, C'71,85,105');
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, fontSize);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clrWhite);
+   ObjectSetInteger(0, name, OBJPROP_BGCOLOR, C'15,23,42');
+   ObjectSetInteger(0, name, OBJPROP_BORDER_COLOR, C'51,65,85');
    ObjectSetInteger(0, name, OBJPROP_ALIGN, ALIGN_CENTER);
 }
 
 void DrawHUD()
 {
-   int startX = 20;
-   int startY = 35;
-   int btnW = 140;
-   int btnH = 36;
-   int gap = 6;
-   int totalW = (btnW * 2) + gap;
+   double scale = (InpUIScale >= 0.7 && InpUIScale <= 3.0) ? InpUIScale : 1.0;
+   int startX = InpStartX;
+   int startY = InpStartY;
+   int pad = (int)(14 * scale);
+   int gap = (int)(8 * scale);
 
-   // Explicitly purge any legacy test buttons from chart
+   int totalW = (int)(470 * scale);
+   int btnW   = (totalW - gap) / 2;
+
+   int fsTitle = MathMax(9, (int)(11 * scale));
+   int fsSub   = MathMax(8, (int)(10 * scale));
+   int fsBtn   = MathMax(9, (int)(11 * scale));
+   int fsLot   = MathMax(10, (int)(12 * scale));
+   int fsSmall = MathMax(8, (int)(10 * scale));
+   int fsStatus= MathMax(8, (int)(9 * scale));
+
+   // Calculate Vertical Offsets
+   int r0_title_y = startY + (int)(2 * scale);
+   int r0_sub_y   = startY + (int)(24 * scale);
+
+   int r1_y   = startY + (int)(50 * scale);
+   int r1_h   = (int)(36 * scale);
+
+   int r2_y   = r1_y + r1_h + gap;
+   int r2_h   = (int)(32 * scale);
+
+   int r3_y   = r2_y + r2_h + gap;
+   int r3_h   = (int)(44 * scale);
+
+   int r4_y   = r3_y + r3_h + gap;
+   int r4_h   = (int)(42 * scale);
+
+   int r5_y   = r4_y + r4_h + gap;
+   int r5_h   = (int)(42 * scale);
+
+   int r6_y   = r5_y + r5_h + gap;
+   int r6_h   = (int)(44 * scale);
+
+   int r7_y   = r6_y + r6_h + (int)(10 * scale);
+   int totalH = (r7_y - startY) + (int)(18 * scale) + pad;
+
+   // Purge legacy elements
    ObjectDelete(0, "BTN_TEST_BUY");
    ObjectDelete(0, "BTN_TEST_SELL");
+   ObjectDelete(0, "BOX_AUTOBOT_BG"); // Remove awkward inner box
 
-   // Row 0: Prominent Dark Status & Signal Box
-   ObjectDelete(0, "BOX_AUTOBOT_BG");
-   ObjectCreate(0, "BOX_AUTOBOT_BG", OBJ_RECTANGLE_LABEL, 0, 0, 0);
-   ObjectSetInteger(0, "BOX_AUTOBOT_BG", OBJPROP_CORNER, CORNER_LEFT_UPPER);
-   ObjectSetInteger(0, "BOX_AUTOBOT_BG", OBJPROP_XDISTANCE, startX);
-   ObjectSetInteger(0, "BOX_AUTOBOT_BG", OBJPROP_YDISTANCE, startY);
-   ObjectSetInteger(0, "BOX_AUTOBOT_BG", OBJPROP_XSIZE, totalW);
-   ObjectSetInteger(0, "BOX_AUTOBOT_BG", OBJPROP_YSIZE, 38);
-   ObjectSetInteger(0, "BOX_AUTOBOT_BG", OBJPROP_BGCOLOR, C'15,23,42');
-   ObjectSetInteger(0, "BOX_AUTOBOT_BG", OBJPROP_BORDER_COLOR, C'51,65,85');
+   // Background Container Card: guarantees sleek, high-contrast dark card on ANY chart color
+   ObjectDelete(0, "BOX_MAIN_BG");
+   ObjectCreate(0, "BOX_MAIN_BG", OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, "BOX_MAIN_BG", OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, "BOX_MAIN_BG", OBJPROP_XDISTANCE, startX - pad);
+   ObjectSetInteger(0, "BOX_MAIN_BG", OBJPROP_YDISTANCE, startY - pad);
+   ObjectSetInteger(0, "BOX_MAIN_BG", OBJPROP_XSIZE, totalW + (pad * 2));
+   ObjectSetInteger(0, "BOX_MAIN_BG", OBJPROP_YSIZE, totalH);
+   ObjectSetInteger(0, "BOX_MAIN_BG", OBJPROP_BGCOLOR, C'16,22,34'); // Deep sleek midnight slate
+   ObjectSetInteger(0, "BOX_MAIN_BG", OBJPROP_BORDER_COLOR, C'51,65,85'); // Crisp border
+   ObjectSetInteger(0, "BOX_MAIN_BG", OBJPROP_SELECTABLE, false);
 
+   // Row 0: Header Text (Sits cleanly on container card)
    ObjectDelete(0, "LBL_AUTOBOT_BADGE");
    ObjectCreate(0, "LBL_AUTOBOT_BADGE", OBJ_LABEL, 0, 0, 0);
    ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_CORNER, CORNER_LEFT_UPPER);
-   ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_XDISTANCE, startX + 10);
-   ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_YDISTANCE, startY + 5);
+   ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_XDISTANCE, startX + (int)(2 * scale));
+   ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_YDISTANCE, r0_title_y);
    ObjectSetString(0, "LBL_AUTOBOT_BADGE", OBJPROP_FONT, "Segoe UI Bold");
-   ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_FONTSIZE, 9);
+   ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_FONTSIZE, fsTitle);
    if(InpEnableAutoPilot)
    {
-      ObjectSetString(0, "LBL_AUTOBOT_BADGE", OBJPROP_TEXT, "🤖 AUTO-PILOT TRADING BOT: ACTIVE");
+      ObjectSetString(0, "LBL_AUTOBOT_BADGE", OBJPROP_TEXT, "[ON] AUTO-PILOT TRADING BOT: ACTIVE");
       ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_COLOR, C'52,211,153'); // Emerald green
    }
    else
    {
-      ObjectSetString(0, "LBL_AUTOBOT_BADGE", OBJPROP_TEXT, "✋ AUTO-PILOT DISABLED (MANUAL ONLY)");
-      ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_COLOR, C'248,113,113'); // Red
+      ObjectSetString(0, "LBL_AUTOBOT_BADGE", OBJPROP_TEXT, "[OFF] AUTO-PILOT DISABLED: MANUAL ONLY");
+      ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_COLOR, C'248,113,113'); // Coral red
    }
 
    ObjectDelete(0, "LBL_AUTOBOT_SIGNAL");
    ObjectCreate(0, "LBL_AUTOBOT_SIGNAL", OBJ_LABEL, 0, 0, 0);
    ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_CORNER, CORNER_LEFT_UPPER);
-   ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_XDISTANCE, startX + 10);
-   ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_YDISTANCE, startY + 20);
-   ObjectSetString(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_FONT, "Segoe UI Semibold");
-   ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_FONTSIZE, 8);
+   ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_XDISTANCE, startX + (int)(2 * scale));
+   ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_YDISTANCE, r0_sub_y);
+   ObjectSetString(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_FONT, "Segoe UI");
+   ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_FONTSIZE, fsSub);
    if(InpEnableAutoPilot)
    {
       ObjectSetString(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_TEXT, "Waiting for release | 10 Limits + 2 Barcode Waves Armed");
@@ -149,46 +200,62 @@ void DrawHUD()
    }
    else
    {
-      ObjectSetString(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_TEXT, "Live Auto-Pilot STOPPED | Manual Buttons & Hotkeys Only");
-      ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_COLOR, C'203,213,225');
+      ObjectSetString(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_TEXT, "Use B/S, K/L, or G hotkeys to trade manually");
+      ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_COLOR, C'148,163,184');
    }
 
-   // Row 1: Lot Selector
-   int r1 = startY + 44;
-   CreateButton("BTN_LOT_MINUS", "-", startX, r1, 30, 26, C'30,41,59', clrWhite, 11);
-   CreateEditBox("EDT_LOT_SIZE", DoubleToString(g_currentLot, 2), startX + 32, r1, 60, 26);
-   CreateButton("BTN_LOT_PLUS", "+", startX + 94, r1, 30, 26, C'30,41,59', clrWhite, 11);
-   
-   CreateButton("BTN_LOT_001", ".01", startX + 128, r1, 36, 26, C'15,23,42', C'148,163,184', 8);
-   CreateButton("BTN_LOT_005", ".05", startX + 166, r1, 36, 26, C'15,23,42', C'148,163,184', 8);
-   CreateButton("BTN_LOT_010", ".10", startX + 204, r1, 36, 26, C'15,23,42', C'148,163,184', 8);
-   CreateButton("BTN_LOT_020", ".20", startX + 242, r1, 36, 26, C'15,23,42', C'148,163,184', 8);
+   // Row 1: Lot Selector & Presets
+   int btnMinusW = (int)(36 * scale);
+   int edtLotW   = (int)(82 * scale);
+   int btnPlusW  = (int)(36 * scale);
+   CreateButton("BTN_LOT_MINUS", "-", startX, r1_y, btnMinusW, r1_h, C'30,41,59', clrWhite, fsLot, C'51,65,85');
+   CreateEditBox("EDT_LOT_SIZE", DoubleToString(g_currentLot, 2), startX + btnMinusW + 4, r1_y, edtLotW, r1_h, fsLot);
+   CreateButton("BTN_LOT_PLUS", "+", startX + btnMinusW + edtLotW + 8, r1_y, btnPlusW, r1_h, C'30,41,59', clrWhite, fsLot, C'51,65,85');
 
-   // Row 2: Barcode Buy/Sell Buttons
-   int r2 = r1 + 32;
-   CreateButton("BTN_BUY",  "▲ BUY BARCODE [B]",  startX, r2, btnW, btnH, C'22,163,74', clrWhite);
-   CreateButton("BTN_SELL", "▼ SELL BARCODE [S]", startX + btnW + gap, r2, btnW, btnH, C'220,38,38', clrWhite);
+   int lotCurX = startX + btnMinusW + edtLotW + btnPlusW + (int)(16 * scale);
+   int remLotW = (startX + totalW) - lotCurX;
+   int lotPresetW = (remLotW - (3 * gap)) / 4;
+   CreateButton("BTN_LOT_001", ".01", lotCurX,                               r1_y, lotPresetW, r1_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
+   CreateButton("BTN_LOT_005", ".05", lotCurX + lotPresetW + gap,             r1_y, lotPresetW, r1_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
+   CreateButton("BTN_LOT_010", ".10", lotCurX + (lotPresetW + gap) * 2,       r1_y, lotPresetW, r1_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
+   int lastLotW = (startX + totalW) - (lotCurX + (lotPresetW + gap) * 3);
+   CreateButton("BTN_LOT_020", ".20", lotCurX + (lotPresetW + gap) * 3,       r1_y, lastLotW,   r1_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
 
-   // Row 3: 80% Margin Limit Sniper Buttons (Armed with 3-Year Empiric Wick Offsets)
-   int r3 = r2 + btnH + gap;
-   string kTxt = StringFormat("K: BUY LIMIT (-$%.0f)", g_activeSpikeOffset);
-   string lTxt = StringFormat("L: SELL LIMIT (+$%.0f)", g_activeSpikeOffset);
-   CreateButton("BTN_KLIMIT", kTxt, startX, r3, btnW, 30, C'15,23,42', C'56,189,248');
-   CreateButton("BTN_LLIMIT", lTxt, startX + btnW + gap, r3, btnW, 30, C'15,23,42', C'248,113,113');
+   // Row 2: Stripes Selector (10, 20, 30, 40, 50, 100)
+   int strBtnW = (totalW - (5 * gap)) / 6;
+   CreateButton("BTN_STRIPES_10",  "10x",  startX,                       r2_y, strBtnW, r2_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
+   CreateButton("BTN_STRIPES_20",  "20x",  startX + (strBtnW + gap),     r2_y, strBtnW, r2_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
+   CreateButton("BTN_STRIPES_30",  "30x",  startX + (strBtnW + gap) * 2, r2_y, strBtnW, r2_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
+   CreateButton("BTN_STRIPES_40",  "40x",  startX + (strBtnW + gap) * 3, r2_y, strBtnW, r2_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
+   CreateButton("BTN_STRIPES_50",  "50x",  startX + (strBtnW + gap) * 4, r2_y, strBtnW, r2_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
+   int lastStrW = (startX + totalW) - (startX + (strBtnW + gap) * 5);
+   CreateButton("BTN_STRIPES_100", "100x", startX + (strBtnW + gap) * 5, r2_y, lastStrW, r2_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
 
-   // Row 4: Panic Close Kill Switch
-   int r4 = r3 + 34;
-   CreateButton("BTN_CLOSE", "✖ PANIC CLOSE ALL [X]", startX, r4, totalW, 38, C'185,28,28', clrWhite);
+   // Row 3: Barcode Buy/Sell Buttons
+   CreateButton("BTN_BUY",  "BUY BARCODE [B]",  startX,            r3_y, btnW, r3_h, C'22,101,52', clrWhite, fsBtn, C'34,197,94');
+   CreateButton("BTN_SELL", "SELL BARCODE [S]", startX + btnW + gap, r3_y, btnW, r3_h, C'153,27,27', clrWhite, fsBtn, C'239,68,68');
 
-   // Row 5: Dynamic Intelligence Display
-   int r5 = r4 + 42;
+   // Row 4: Limit Sniper Buttons
+   string kTxt = StringFormat("BUY LIMIT (-$%.0f)", g_activeSpikeOffset);
+   string lTxt = StringFormat("SELL LIMIT (+$%.0f)", g_activeSpikeOffset);
+   CreateButton("BTN_KLIMIT", kTxt, startX,            r4_y, btnW, r4_h, C'12,74,110', C'56,189,248', fsBtn, C'14,116,144');
+   CreateButton("BTN_LLIMIT", lTxt, startX + btnW + gap, r4_y, btnW, r4_h, C'127,29,29', C'248,113,113', fsBtn, C'185,28,28');
+
+   // Row 5: Straddle Stops (G key)
+   string straddleTxt = StringFormat("STRADDLE BUY/SELL STOPS (±%.0f p)", InpStopDistancePips);
+   CreateButton("BTN_STRADDLE", straddleTxt, startX, r5_y, totalW, r5_h, C'66,50,15', C'250,204,21', fsBtn, C'161,98,7');
+
+   // Row 6: Panic Close Kill Switch
+   CreateButton("BTN_CLOSE", "[X] PANIC CLOSE ALL POSITIONS", startX, r6_y, totalW, r6_h, C'185,28,28', clrWhite, fsBtn, C'220,38,38');
+
+   // Row 7: Dynamic Intelligence Display
    ObjectDelete(0, "LBL_STATUS");
    ObjectCreate(0, "LBL_STATUS", OBJ_LABEL, 0, 0, 0);
    ObjectSetInteger(0, "LBL_STATUS", OBJPROP_CORNER, CORNER_LEFT_UPPER);
-   ObjectSetInteger(0, "LBL_STATUS", OBJPROP_XDISTANCE, startX);
-   ObjectSetInteger(0, "LBL_STATUS", OBJPROP_YDISTANCE, r5);
+   ObjectSetInteger(0, "LBL_STATUS", OBJPROP_XDISTANCE, startX + (int)(2 * scale));
+   ObjectSetInteger(0, "LBL_STATUS", OBJPROP_YDISTANCE, r7_y);
    ObjectSetString(0, "LBL_STATUS", OBJPROP_FONT, "Segoe UI");
-   ObjectSetInteger(0, "LBL_STATUS", OBJPROP_FONTSIZE, 8);
+   ObjectSetInteger(0, "LBL_STATUS", OBJPROP_FONTSIZE, fsStatus);
    ObjectSetInteger(0, "LBL_STATUS", OBJPROP_COLOR, C'148,163,184');
 }
 
@@ -449,17 +516,17 @@ void UpdateHUDStatus()
    CalibrateNewsTargets();
    CheckAutoBarcodeTimer();
 
-   // Update Limit button texts with live calibrated spike wick distances
-   ObjectSetString(0, "BTN_KLIMIT", OBJPROP_TEXT, StringFormat("K: BUY LIMIT (-$%.0f)", g_activeSpikeOffset));
-   ObjectSetString(0, "BTN_LLIMIT", OBJPROP_TEXT, StringFormat("L: SELL LIMIT (+$%.0f)", g_activeSpikeOffset));
+   // Update Limit button texts with live calibrated spike wick distances (No "K:" or "L:" prefix)
+   ObjectSetString(0, "BTN_KLIMIT", OBJPROP_TEXT, StringFormat("BUY LIMIT (-$%.0f)", g_activeSpikeOffset));
+   ObjectSetString(0, "BTN_LLIMIT", OBJPROP_TEXT, StringFormat("SELL LIMIT (+$%.0f)", g_activeSpikeOffset));
 
    if(InpEnableAutoPilot)
    {
-      ObjectSetString(0, "LBL_AUTOBOT_BADGE", OBJPROP_TEXT, "🤖 AUTO-PILOT NEWS ROBOT: ACTIVE");
+      ObjectSetString(0, "LBL_AUTOBOT_BADGE", OBJPROP_TEXT, "[ON] AUTO-PILOT TRADING BOT: ACTIVE");
       ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_COLOR, C'52,211,153'); // Emerald Green
       if(g_barcodePending)
       {
-         ObjectSetString(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_TEXT, StringFormat("⏳ POST-SPIKE BARCODE ARMED: Firing Wave %d/%d...", g_wavesFired + 1, InpBarcodeWaveCount));
+         ObjectSetString(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_TEXT, StringFormat("POST-SPIKE BARCODE ARMED: Firing Wave %d/%d...", g_wavesFired + 1, InpBarcodeWaveCount));
          ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_COLOR, C'251,191,36'); // Amber Yellow
       }
       else
@@ -470,15 +537,76 @@ void UpdateHUDStatus()
    }
    else
    {
-      ObjectSetString(0, "LBL_AUTOBOT_BADGE", OBJPROP_TEXT, "✋ AUTO-PILOT DISABLED: MANUAL ONLY");
-      ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_COLOR, C'248,113,113'); // Red
-      ObjectSetString(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_TEXT, "Use B/S or K/L hotkeys to trade manually");
+      ObjectSetString(0, "LBL_AUTOBOT_BADGE", OBJPROP_TEXT, "[OFF] AUTO-PILOT DISABLED: MANUAL ONLY");
+      ObjectSetInteger(0, "LBL_AUTOBOT_BADGE", OBJPROP_COLOR, C'248,113,113'); // Coral Red
+      ObjectSetString(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_TEXT, "Use B/S, K/L, or G hotkeys to trade manually");
       ObjectSetInteger(0, "LBL_AUTOBOT_SIGNAL", OBJPROP_COLOR, C'148,163,184');
    }
 
-   string info = StringFormat("Stripe: %.2f | 70%% Wick Offset: $%.0f (%d p) | Target TP: +$%.0f (%d p)", 
-                              g_currentLot, g_activeSpikeOffset, (int)(g_activeSpikeOffset*10), g_activeTPDist, (int)(g_activeTPDist*10));
+   string info = StringFormat("Stripes: %dx %.2f | Wick: $%.0f (%dp) | Target TP: +$%.0f (%dp)", 
+                              g_currentStripes, g_currentLot, g_activeSpikeOffset, (int)(g_activeSpikeOffset*10), g_activeTPDist, (int)(g_activeTPDist*10));
    ObjectSetString(0, "LBL_STATUS", OBJPROP_TEXT, info);
+
+   // Buy / Sell button labels - Clean, exact match to Image 3
+   ObjectSetString(0, "BTN_BUY", OBJPROP_TEXT, "BUY BARCODE [B]");
+   ObjectSetString(0, "BTN_SELL", OBJPROP_TEXT, "SELL BARCODE [S]");
+   ObjectSetString(0, "BTN_STRADDLE", OBJPROP_TEXT, StringFormat("STRADDLE BUY/SELL STOPS (±%.0f p)", InpStopDistancePips));
+   ObjectSetString(0, "BTN_CLOSE", OBJPROP_TEXT, "[X] PANIC CLOSE ALL POSITIONS");
+
+   // Active button colors
+   color activeBg       = C'2,132,199';   // Vibrant Sky Blue
+   color activeFg       = clrWhite;
+   color activeBorder   = C'56,189,248';  // Light Sky Border
+   color inactiveBg     = C'30,41,59';    // Dark Slate
+   color inactiveFg     = C'203,213,225';  // Slate-300
+   color inactiveBorder = C'51,65,85';    // Slate-700
+
+   // Lot Presets highlight
+   bool is001 = (MathAbs(g_currentLot - 0.01) < 0.005);
+   bool is005 = (MathAbs(g_currentLot - 0.05) < 0.005);
+   bool is010 = (MathAbs(g_currentLot - 0.10) < 0.005);
+   bool is020 = (MathAbs(g_currentLot - 0.20) < 0.005);
+   ObjectSetInteger(0, "BTN_LOT_001", OBJPROP_BGCOLOR, is001 ? activeBg : inactiveBg);
+   ObjectSetInteger(0, "BTN_LOT_001", OBJPROP_COLOR,   is001 ? activeFg : inactiveFg);
+   ObjectSetInteger(0, "BTN_LOT_001", OBJPROP_BORDER_COLOR, is001 ? activeBorder : inactiveBorder);
+
+   ObjectSetInteger(0, "BTN_LOT_005", OBJPROP_BGCOLOR, is005 ? activeBg : inactiveBg);
+   ObjectSetInteger(0, "BTN_LOT_005", OBJPROP_COLOR,   is005 ? activeFg : inactiveFg);
+   ObjectSetInteger(0, "BTN_LOT_005", OBJPROP_BORDER_COLOR, is005 ? activeBorder : inactiveBorder);
+
+   ObjectSetInteger(0, "BTN_LOT_010", OBJPROP_BGCOLOR, is010 ? activeBg : inactiveBg);
+   ObjectSetInteger(0, "BTN_LOT_010", OBJPROP_COLOR,   is010 ? activeFg : inactiveFg);
+   ObjectSetInteger(0, "BTN_LOT_010", OBJPROP_BORDER_COLOR, is010 ? activeBorder : inactiveBorder);
+
+   ObjectSetInteger(0, "BTN_LOT_020", OBJPROP_BGCOLOR, is020 ? activeBg : inactiveBg);
+   ObjectSetInteger(0, "BTN_LOT_020", OBJPROP_COLOR,   is020 ? activeFg : inactiveFg);
+   ObjectSetInteger(0, "BTN_LOT_020", OBJPROP_BORDER_COLOR, is020 ? activeBorder : inactiveBorder);
+
+   // Stripes Presets highlight
+   ObjectSetInteger(0, "BTN_STRIPES_10",  OBJPROP_BGCOLOR, (g_currentStripes == 10)  ? activeBg : inactiveBg);
+   ObjectSetInteger(0, "BTN_STRIPES_10",  OBJPROP_COLOR,   (g_currentStripes == 10)  ? activeFg : inactiveFg);
+   ObjectSetInteger(0, "BTN_STRIPES_10",  OBJPROP_BORDER_COLOR, (g_currentStripes == 10)  ? activeBorder : inactiveBorder);
+
+   ObjectSetInteger(0, "BTN_STRIPES_20",  OBJPROP_BGCOLOR, (g_currentStripes == 20)  ? activeBg : inactiveBg);
+   ObjectSetInteger(0, "BTN_STRIPES_20",  OBJPROP_COLOR,   (g_currentStripes == 20)  ? activeFg : inactiveFg);
+   ObjectSetInteger(0, "BTN_STRIPES_20",  OBJPROP_BORDER_COLOR, (g_currentStripes == 20)  ? activeBorder : inactiveBorder);
+
+   ObjectSetInteger(0, "BTN_STRIPES_30",  OBJPROP_BGCOLOR, (g_currentStripes == 30)  ? activeBg : inactiveBg);
+   ObjectSetInteger(0, "BTN_STRIPES_30",  OBJPROP_COLOR,   (g_currentStripes == 30)  ? activeFg : inactiveFg);
+   ObjectSetInteger(0, "BTN_STRIPES_30",  OBJPROP_BORDER_COLOR, (g_currentStripes == 30)  ? activeBorder : inactiveBorder);
+
+   ObjectSetInteger(0, "BTN_STRIPES_40",  OBJPROP_BGCOLOR, (g_currentStripes == 40)  ? activeBg : inactiveBg);
+   ObjectSetInteger(0, "BTN_STRIPES_40",  OBJPROP_COLOR,   (g_currentStripes == 40)  ? activeFg : inactiveFg);
+   ObjectSetInteger(0, "BTN_STRIPES_40",  OBJPROP_BORDER_COLOR, (g_currentStripes == 40)  ? activeBorder : inactiveBorder);
+
+   ObjectSetInteger(0, "BTN_STRIPES_50",  OBJPROP_BGCOLOR, (g_currentStripes == 50)  ? activeBg : inactiveBg);
+   ObjectSetInteger(0, "BTN_STRIPES_50",  OBJPROP_COLOR,   (g_currentStripes == 50)  ? activeFg : inactiveFg);
+   ObjectSetInteger(0, "BTN_STRIPES_50",  OBJPROP_BORDER_COLOR, (g_currentStripes == 50)  ? activeBorder : inactiveBorder);
+
+   ObjectSetInteger(0, "BTN_STRIPES_100", OBJPROP_BGCOLOR, (g_currentStripes == 100) ? activeBg : inactiveBg);
+   ObjectSetInteger(0, "BTN_STRIPES_100", OBJPROP_COLOR,   (g_currentStripes == 100) ? activeFg : inactiveFg);
+   ObjectSetInteger(0, "BTN_STRIPES_100", OBJPROP_BORDER_COLOR, (g_currentStripes == 100) ? activeBorder : inactiveBorder);
+
    ChartRedraw(0);
 }
 
@@ -488,6 +616,7 @@ int OnInit()
    trade.SetDeviationInPoints(InpSlippagePoints);
    trade.SetTypeFilling(ORDER_FILLING_IOC);
    g_currentLot = InpDefaultLot;
+   g_currentStripes = (InpNumberOfStripes > 0) ? InpNumberOfStripes : 10;
 
    DrawHUD();
    UpdateHUDStatus();
@@ -499,6 +628,7 @@ int OnInit()
 void OnDeinit(const int reason)
 {
    EventKillTimer();
+   ObjectDelete(0, "BOX_MAIN_BG");
    ObjectDelete(0, "BOX_AUTOBOT_BG");
    ObjectDelete(0, "LBL_AUTOBOT_BADGE");
    ObjectDelete(0, "LBL_AUTOBOT_SIGNAL");
@@ -509,10 +639,17 @@ void OnDeinit(const int reason)
    ObjectDelete(0, "BTN_LOT_005");
    ObjectDelete(0, "BTN_LOT_010");
    ObjectDelete(0, "BTN_LOT_020");
+   ObjectDelete(0, "BTN_STRIPES_10");
+   ObjectDelete(0, "BTN_STRIPES_20");
+   ObjectDelete(0, "BTN_STRIPES_30");
+   ObjectDelete(0, "BTN_STRIPES_40");
+   ObjectDelete(0, "BTN_STRIPES_50");
+   ObjectDelete(0, "BTN_STRIPES_100");
    ObjectDelete(0, "BTN_BUY");
    ObjectDelete(0, "BTN_SELL");
    ObjectDelete(0, "BTN_KLIMIT");
    ObjectDelete(0, "BTN_LLIMIT");
+   ObjectDelete(0, "BTN_STRADDLE");
    ObjectDelete(0, "BTN_CLOSE");
    ObjectDelete(0, "LBL_STATUS");
    ChartRedraw(0);
@@ -543,6 +680,12 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       else if(sparam == "BTN_LOT_005") { g_currentLot = 0.05; ObjectSetString(0, "EDT_LOT_SIZE", OBJPROP_TEXT, "0.05"); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
       else if(sparam == "BTN_LOT_010") { g_currentLot = 0.10; ObjectSetString(0, "EDT_LOT_SIZE", OBJPROP_TEXT, "0.10"); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
       else if(sparam == "BTN_LOT_020") { g_currentLot = 0.20; ObjectSetString(0, "EDT_LOT_SIZE", OBJPROP_TEXT, "0.20"); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
+      else if(sparam == "BTN_STRIPES_10")  { g_currentStripes = 10;  ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
+      else if(sparam == "BTN_STRIPES_20")  { g_currentStripes = 20;  ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
+      else if(sparam == "BTN_STRIPES_30")  { g_currentStripes = 30;  ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
+      else if(sparam == "BTN_STRIPES_40")  { g_currentStripes = 40;  ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
+      else if(sparam == "BTN_STRIPES_50")  { g_currentStripes = 50;  ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
+      else if(sparam == "BTN_STRIPES_100") { g_currentStripes = 100; ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
       else if(sparam == "BTN_BUY")
       {
          ExecuteBarcode(ORDER_TYPE_BUY);
@@ -563,6 +706,11 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
          ArmSpikeLimits(ORDER_TYPE_SELL_LIMIT);
          ObjectSetInteger(0, "BTN_LLIMIT", OBJPROP_STATE, false);
       }
+      else if(sparam == "BTN_STRADDLE")
+      {
+         ExecuteStraddleStops();
+         ObjectSetInteger(0, "BTN_STRADDLE", OBJPROP_STATE, false);
+      }
       else if(sparam == "BTN_CLOSE")
       {
          ExecuteEmergencyClose();
@@ -582,6 +730,7 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       else if(lparam == 66 || lparam == 98) ExecuteBarcode(ORDER_TYPE_BUY); // B
       else if(lparam == 76 || lparam == 108) ArmSpikeLimits(ORDER_TYPE_SELL_LIMIT); // L
       else if(lparam == 75 || lparam == 107) ArmSpikeLimits(ORDER_TYPE_BUY_LIMIT); // K
+      else if(lparam == 71 || lparam == 103) ExecuteStraddleStops(); // G
       else if(lparam == 88 || lparam == 120) ExecuteEmergencyClose(); // X
    }
 }
@@ -608,18 +757,18 @@ bool CanAffordBarcode(ENUM_ORDER_TYPE orderType, double &outLotPerStripe)
    double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
    if(minLot <= 0) minLot = 0.01;
 
-   // Divide into InpNumberOfStripes (default 10 stripes)
-   int numStripes = (InpNumberOfStripes > 0) ? InpNumberOfStripes : 10;
+   // Divide into active stripes (default 10 stripes)
+   int numStripes = (g_currentStripes > 0) ? g_currentStripes : InpNumberOfStripes;
    double lotPerStripe = MathFloor((totalLots / (double)numStripes) / lotStep) * lotStep;
 
-   // If 70% of margin can afford at least 10x minLot (e.g. 10 x 0.01 = 0.10 lot total)
+   // If 70% of margin can afford at least numStripes x minLot (e.g. 10 x 0.01 = 0.10 lot total)
    if(lotPerStripe >= minLot)
    {
       outLotPerStripe = NormalizeDouble(lotPerStripe, 2);
       return true;
    }
    
-   // If not enough for 10 stripes, check if free margin can at least afford 1 stripe of minLot
+   // If not enough for all stripes, check if free margin can at least afford 1 stripe of minLot
    if(freeMargin >= (marginForOneLot * minLot * 1.5))
    {
       outLotPerStripe = minLot;
@@ -633,16 +782,26 @@ void ExecuteBarcode(ENUM_ORDER_TYPE orderType, double customLot = 0.0)
 {
    int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
    double lotToUse = (customLot > 0.0) ? customLot : g_currentLot;
+   int stripesToUse = (g_currentStripes > 0) ? g_currentStripes : InpNumberOfStripes;
 
    int filled = 0;
-   for(int i = 0; i < InpNumberOfStripes; i++)
+   for(int i = 0; i < stripesToUse; i++)
    {
-      // Check free margin before each stripe to prevent margin rejection
       double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
-      if(freeMargin <= 5.0) break; // Leave safety buffer
-
       double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
       double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+      double orderPrice = (orderType == ORDER_TYPE_SELL) ? bid : ask;
+
+      // Verify margin dynamically before each stripe: add 0.01 when we have enough margin
+      double reqMargin = 0.0;
+      if(OrderCalcMargin(orderType, _Symbol, lotToUse, orderPrice, reqMargin) && reqMargin > 0.0)
+      {
+         if(freeMargin < (reqMargin + 2.0)) break; // Leave safety buffer
+      }
+      else
+      {
+         if(freeMargin <= 5.0) break; // Fallback safety buffer
+      }
 
       if(orderType == ORDER_TYPE_SELL)
       {
@@ -657,7 +816,7 @@ void ExecuteBarcode(ENUM_ORDER_TYPE orderType, double customLot = 0.0)
       Sleep(20);
    }
    PrintFormat("✅ BARCODE EXECUTED: %d/%d stripes filled at %.2f lots on %s (TP: +$%.2f [%d pips])", 
-               filled, InpNumberOfStripes, lotToUse, _Symbol, g_activeTPDist, (int)(g_activeTPDist*10));
+               filled, stripesToUse, lotToUse, _Symbol, g_activeTPDist, (int)(g_activeTPDist*10));
 }
 
 void ArmSpikeLimits(ENUM_ORDER_TYPE orderType)
@@ -794,4 +953,95 @@ void ExecuteEmergencyClose()
    }
 
    PrintFormat("⚡ NON-BLOCKING KILL SWITCH: %d close orders broadcast instantly to broker on %s!", fired, _Symbol);
+}
+
+double GetPipSize()
+{
+   string sym = _Symbol;
+   int digits = (int)SymbolInfoInteger(sym, SYMBOL_DIGITS);
+   double point = SymbolInfoDouble(sym, SYMBOL_POINT);
+
+   if(StringFind(sym, "XAU") >= 0 || StringFind(sym, "GOLD") >= 0)
+   {
+      // 1 pip on Gold is universally $0.10 (10 cents)
+      return 0.10;
+   }
+   if(digits == 3 || digits == 5) return point * 10.0;
+   return point;
+}
+
+void ExecuteStraddleStops()
+{
+   int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+   double pipSize = GetPipSize();
+   double dist = InpStopDistancePips * pipSize;
+
+   // Ensure distance satisfies broker minimum stop level
+   long stopsLevel = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
+   double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   double minAllowedDist = (double)stopsLevel * point;
+   if(dist < minAllowedDist) dist = minAllowedDist;
+
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+
+   double buyStopPrice = NormalizeDouble(ask + dist, digits);
+   double sellStopPrice = NormalizeDouble(bid - dist, digits);
+
+   // Calculate Take Profit
+   double buyTP = 0.0;
+   double sellTP = 0.0;
+   if(InpStopTPDistancePips > 0.0)
+   {
+      double tpDist = InpStopTPDistancePips * pipSize;
+      buyTP = NormalizeDouble(buyStopPrice + tpDist, digits);
+      sellTP = NormalizeDouble(sellStopPrice - tpDist, digits);
+   }
+   else if(g_activeTPDist > 0.0)
+   {
+      buyTP = NormalizeDouble(buyStopPrice + g_activeTPDist, digits);
+      sellTP = NormalizeDouble(sellStopPrice - g_activeTPDist, digits);
+   }
+
+   // Calculate Stop Loss
+   double buySL = 0.0;
+   double sellSL = 0.0;
+   if(InpStopSLDistancePips > 0.0)
+   {
+      double slDist = InpStopSLDistancePips * pipSize;
+      buySL = NormalizeDouble(buyStopPrice - slDist, digits);
+      sellSL = NormalizeDouble(sellStopPrice + slDist, digits);
+   }
+
+   // Normalize lot size
+   double lotToUse = g_currentLot;
+   double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   double maxLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+   double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   if(lotStep <= 0) lotStep = 0.01;
+   if(minLot <= 0) minLot = 0.01;
+   if(lotToUse < minLot) lotToUse = minLot;
+   if(maxLot > 0 && lotToUse > maxLot) lotToUse = maxLot;
+   lotToUse = MathFloor(lotToUse / lotStep) * lotStep;
+
+   // Expiry handling
+   datetime expiry = (InpStopExpiryMins > 0) ? (TimeCurrent() + (InpStopExpiryMins * 60)) : 0;
+   ENUM_ORDER_TYPE_TIME typeTime = (expiry > 0) ? ORDER_TIME_SPECIFIED : ORDER_TIME_GTC;
+
+   // Execute Buy Stop
+   bool bRes = trade.BuyStop(lotToUse, buyStopPrice, _Symbol, buySL, buyTP, typeTime, expiry, "Straddle BuyStop [G]");
+   if(!bRes && (trade.ResultRetcode() == TRADE_RETCODE_INVALID_EXPIRATION || trade.ResultRetcode() == 10022))
+   {
+      trade.BuyStop(lotToUse, buyStopPrice, _Symbol, buySL, buyTP, ORDER_TIME_GTC, 0, "Straddle BuyStop [G]");
+   }
+
+   // Execute Sell Stop
+   bool sRes = trade.SellStop(lotToUse, sellStopPrice, _Symbol, sellSL, sellTP, typeTime, expiry, "Straddle SellStop [G]");
+   if(!sRes && (trade.ResultRetcode() == TRADE_RETCODE_INVALID_EXPIRATION || trade.ResultRetcode() == 10022))
+   {
+      trade.SellStop(lotToUse, sellStopPrice, _Symbol, sellSL, sellTP, ORDER_TIME_GTC, 0, "Straddle SellStop [G]");
+   }
+
+   PrintFormat("⚡ STRADDLE EXECUTED [G]: BuyStop @ %.2f | SellStop @ %.2f (Offset: ±%.1f pips / $%.2f | Lot: %.2f)",
+               buyStopPrice, sellStopPrice, InpStopDistancePips, dist, lotToUse);
 }
