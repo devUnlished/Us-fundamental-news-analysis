@@ -112,11 +112,12 @@ void DrawHUD()
    double scale = (InpUIScale >= 0.7 && InpUIScale <= 3.0) ? InpUIScale : 1.0;
    int startX = InpStartX;
    int startY = InpStartY;
-   int pad = (int)(20 * scale);
-   int gap = (int)(10 * scale);
+   int pad  = (int)(22 * scale);
+   int gapX = (int)(10 * scale);
+   int gapY = (int)(16 * scale);
 
    int totalW = (int)(560 * scale);
-   int btnW   = (totalW - gap) / 2;
+   int btnW   = (totalW - gapX) / 2;
 
    int fsTitle = MathMax(8, (int)(10 * scale));
    int fsSub   = MathMax(8, (int)(9 * scale));
@@ -125,30 +126,30 @@ void DrawHUD()
    int fsSmall = MathMax(8, (int)(9 * scale));
    int fsStatus= MathMax(8, (int)(9 * scale));
 
-   // Calculate Vertical Offsets with generous vertical spacing
-   int r0_title_y = startY + (int)(2 * scale);
-   int r0_sub_y   = startY + (int)(22 * scale);
+   // Calculate Vertical Offsets with generous vertical spacing from top to bottom
+   int r0_title_y = startY + (int)(6 * scale);
+   int r0_sub_y   = startY + (int)(30 * scale);
 
-   int r1_y   = startY + (int)(48 * scale);
-   int r1_h   = (int)(36 * scale);
+   int r1_y   = startY + (int)(64 * scale);
+   int r1_h   = (int)(38 * scale);
 
-   int r2_y   = r1_y + r1_h + gap;
-   int r2_h   = (int)(34 * scale);
+   int r2_y   = r1_y + r1_h + gapY;
+   int r2_h   = (int)(36 * scale);
 
-   int r3_y   = r2_y + r2_h + gap;
-   int r3_h   = (int)(44 * scale);
+   int r3_y   = r2_y + r2_h + gapY + (int)(4 * scale);
+   int r3_h   = (int)(46 * scale);
 
-   int r4_y   = r3_y + r3_h + gap;
-   int r4_h   = (int)(42 * scale);
+   int r4_y   = r3_y + r3_h + gapY;
+   int r4_h   = (int)(44 * scale);
 
-   int r5_y   = r4_y + r4_h + gap;
-   int r5_h   = (int)(42 * scale);
+   int r5_y   = r4_y + r4_h + gapY;
+   int r5_h   = (int)(44 * scale);
 
-   int r6_y   = r5_y + r5_h + gap;
-   int r6_h   = (int)(44 * scale);
+   int r6_y   = r5_y + r5_h + gapY + (int)(4 * scale);
+   int r6_h   = (int)(46 * scale);
 
-   int r7_y   = r6_y + r6_h + (int)(12 * scale);
-   int totalH = (r7_y - startY) + (int)(18 * scale) + pad;
+   int r7_y   = r6_y + r6_h + (int)(18 * scale);
+   int totalH = (r7_y - startY) + (int)(22 * scale) + pad;
 
    // Purge legacy elements
    ObjectDelete(0, "BTN_TEST_BUY");
@@ -214,32 +215,32 @@ void DrawHUD()
 
    int lotCurX = startX + btnMinusW + edtLotW + btnPlusW + (int)(16 * scale);
    int remLotW = (startX + totalW) - lotCurX;
-   int lotPresetW = (remLotW - (3 * gap)) / 4;
+   int lotPresetW = (remLotW - (3 * gapX)) / 4;
    CreateButton("BTN_LOT_001", ".01", lotCurX,                               r1_y, lotPresetW, r1_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
-   CreateButton("BTN_LOT_005", ".05", lotCurX + lotPresetW + gap,             r1_y, lotPresetW, r1_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
-   CreateButton("BTN_LOT_010", ".10", lotCurX + (lotPresetW + gap) * 2,       r1_y, lotPresetW, r1_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
-   int lastLotW = (startX + totalW) - (lotCurX + (lotPresetW + gap) * 3);
-   CreateButton("BTN_LOT_020", ".20", lotCurX + (lotPresetW + gap) * 3,       r1_y, lastLotW,   r1_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
+   CreateButton("BTN_LOT_005", ".05", lotCurX + lotPresetW + gapX,             r1_y, lotPresetW, r1_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
+   CreateButton("BTN_LOT_010", ".10", lotCurX + (lotPresetW + gapX) * 2,       r1_y, lotPresetW, r1_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
+   int lastLotW = (startX + totalW) - (lotCurX + (lotPresetW + gapX) * 3);
+   CreateButton("BTN_LOT_020", ".20", lotCurX + (lotPresetW + gapX) * 3,       r1_y, lastLotW,   r1_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
 
    // Row 2: Stripes Selector (10, 20, 30, 40, 50, 100)
-   int strBtnW = (totalW - (5 * gap)) / 6;
-   CreateButton("BTN_STRIPES_10",  "10x",  startX,                       r2_y, strBtnW, r2_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
-   CreateButton("BTN_STRIPES_20",  "20x",  startX + (strBtnW + gap),     r2_y, strBtnW, r2_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
-   CreateButton("BTN_STRIPES_30",  "30x",  startX + (strBtnW + gap) * 2, r2_y, strBtnW, r2_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
-   CreateButton("BTN_STRIPES_40",  "40x",  startX + (strBtnW + gap) * 3, r2_y, strBtnW, r2_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
-   CreateButton("BTN_STRIPES_50",  "50x",  startX + (strBtnW + gap) * 4, r2_y, strBtnW, r2_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
-   int lastStrW = (startX + totalW) - (startX + (strBtnW + gap) * 5);
-   CreateButton("BTN_STRIPES_100", "100x", startX + (strBtnW + gap) * 5, r2_y, lastStrW, r2_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
+   int strBtnW = (totalW - (5 * gapX)) / 6;
+   CreateButton("BTN_STRIPES_10",  "10x",  startX,                        r2_y, strBtnW, r2_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
+   CreateButton("BTN_STRIPES_20",  "20x",  startX + (strBtnW + gapX),     r2_y, strBtnW, r2_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
+   CreateButton("BTN_STRIPES_30",  "30x",  startX + (strBtnW + gapX) * 2, r2_y, strBtnW, r2_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
+   CreateButton("BTN_STRIPES_40",  "40x",  startX + (strBtnW + gapX) * 3, r2_y, strBtnW, r2_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
+   CreateButton("BTN_STRIPES_50",  "50x",  startX + (strBtnW + gapX) * 4, r2_y, strBtnW, r2_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
+   int lastStrW = (startX + totalW) - (startX + (strBtnW + gapX) * 5);
+   CreateButton("BTN_STRIPES_100", "100x", startX + (strBtnW + gapX) * 5, r2_y, lastStrW, r2_h, C'30,41,59', C'203,213,225', fsSmall, C'51,65,85');
 
    // Row 3: Barcode Buy/Sell Buttons
-   CreateButton("BTN_BUY",  "BUY BARCODE [B]",  startX,            r3_y, btnW, r3_h, C'22,101,52', clrWhite, fsBtn, C'34,197,94');
-   CreateButton("BTN_SELL", "SELL BARCODE [S]", startX + btnW + gap, r3_y, btnW, r3_h, C'153,27,27', clrWhite, fsBtn, C'239,68,68');
+   CreateButton("BTN_BUY",  "BUY BARCODE [B]",  startX,             r3_y, btnW, r3_h, C'22,101,52', clrWhite, fsBtn, C'34,197,94');
+   CreateButton("BTN_SELL", "SELL BARCODE [S]", startX + btnW + gapX, r3_y, btnW, r3_h, C'153,27,27', clrWhite, fsBtn, C'239,68,68');
 
    // Row 4: Limit Sniper Buttons (with K and L keys explicitly labelled)
    string kTxt = StringFormat("K: BUY LIMIT (-$%.0f)", g_activeSpikeOffset);
    string lTxt = StringFormat("L: SELL LIMIT (+$%.0f)", g_activeSpikeOffset);
-   CreateButton("BTN_KLIMIT", kTxt, startX,            r4_y, btnW, r4_h, C'12,74,110', C'56,189,248', fsBtn, C'14,116,144');
-   CreateButton("BTN_LLIMIT", lTxt, startX + btnW + gap, r4_y, btnW, r4_h, C'127,29,29', C'248,113,113', fsBtn, C'185,28,28');
+   CreateButton("BTN_KLIMIT", kTxt, startX,             r4_y, btnW, r4_h, C'12,74,110', C'56,189,248', fsBtn, C'14,116,144');
+   CreateButton("BTN_LLIMIT", lTxt, startX + btnW + gapX, r4_y, btnW, r4_h, C'127,29,29', C'248,113,113', fsBtn, C'185,28,28');
 
    // Row 5: Straddle Stops (G key)
    string straddleTxt = StringFormat("STRADDLE BUY/SELL STOPS [G] (±%.0f p)", InpStopDistancePips);
