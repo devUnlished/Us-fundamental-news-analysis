@@ -708,7 +708,9 @@ void OnDeinit(const int reason)
    ObjectDelete(0, "BTN_CLOSE");
    ObjectDelete(0, "LBL_STATUS");
    ObjectDelete(0, "LINE_STRADDLE_BUY");
+   ObjectDelete(0, "LINE_STRADDLE_BUY_TP");
    ObjectDelete(0, "LINE_STRADDLE_SELL");
+   ObjectDelete(0, "LINE_STRADDLE_SELL_TP");
    ChartRedraw(0);
 }
 
@@ -1214,29 +1216,52 @@ void ArmStraddleWatch()
 
    g_straddleBuyTrigger  = NormalizeDouble(ask + dist, digits);
    g_straddleSellTrigger = NormalizeDouble(bid - dist, digits);
+   double buyTP          = NormalizeDouble(g_straddleBuyTrigger + g_activeTPDist, digits);
+   double sellTP         = NormalizeDouble(g_straddleSellTrigger - g_activeTPDist, digits);
+
    g_straddleArmed = true;
    g_straddleArmTime = TimeCurrent();
 
-   // Draw visual trigger lines on the chart
+   // Enable on-chart descriptions so labels appear next to the lines
+   ChartSetInteger(0, CHART_SHOW_OBJECT_DESCR, true);
+
+   // 1. BUY STOP TRIGGER LINE (Vibrant Lime Green)
    ObjectDelete(0, "LINE_STRADDLE_BUY");
    ObjectCreate(0, "LINE_STRADDLE_BUY", OBJ_HLINE, 0, 0, g_straddleBuyTrigger);
-   ObjectSetInteger(0, "LINE_STRADDLE_BUY", OBJPROP_COLOR, C'34,197,94'); // Vibrant green
-   ObjectSetInteger(0, "LINE_STRADDLE_BUY", OBJPROP_STYLE, STYLE_DASH);
+   ObjectSetInteger(0, "LINE_STRADDLE_BUY", OBJPROP_COLOR, clrLime);
+   ObjectSetInteger(0, "LINE_STRADDLE_BUY", OBJPROP_STYLE, STYLE_SOLID);
    ObjectSetInteger(0, "LINE_STRADDLE_BUY", OBJPROP_WIDTH, 2);
-   ObjectSetString(0, "LINE_STRADDLE_BUY", OBJPROP_TEXT, StringFormat("⚡ BREAKOUT BUY: %dx %.2f (Trigger: +$%.0f | TP +$%.0f)", g_currentStripes, g_currentLot, InpStopDistance, g_activeTPDist));
+   ObjectSetString(0, "LINE_STRADDLE_BUY", OBJPROP_TEXT, StringFormat("⚡ BUY STOP TRIGGER (G): %.2f (+$%.0f)", g_straddleBuyTrigger, InpStopDistance));
 
+   // 2. BUY STOP TAKE PROFIT LINE (Bright Mint Green)
+   ObjectDelete(0, "LINE_STRADDLE_BUY_TP");
+   ObjectCreate(0, "LINE_STRADDLE_BUY_TP", OBJ_HLINE, 0, 0, buyTP);
+   ObjectSetInteger(0, "LINE_STRADDLE_BUY_TP", OBJPROP_COLOR, C'52,211,153');
+   ObjectSetInteger(0, "LINE_STRADDLE_BUY_TP", OBJPROP_STYLE, STYLE_DASH);
+   ObjectSetInteger(0, "LINE_STRADDLE_BUY_TP", OBJPROP_WIDTH, 2);
+   ObjectSetString(0, "LINE_STRADDLE_BUY_TP", OBJPROP_TEXT, StringFormat("🎯 BUY TAKE PROFIT: %.2f (+$%.0f TP)", buyTP, g_activeTPDist));
+
+   // 3. SELL STOP TRIGGER LINE (Vibrant Neon Red)
    ObjectDelete(0, "LINE_STRADDLE_SELL");
    ObjectCreate(0, "LINE_STRADDLE_SELL", OBJ_HLINE, 0, 0, g_straddleSellTrigger);
-   ObjectSetInteger(0, "LINE_STRADDLE_SELL", OBJPROP_COLOR, C'239,68,68'); // Vibrant red
-   ObjectSetInteger(0, "LINE_STRADDLE_SELL", OBJPROP_STYLE, STYLE_DASH);
+   ObjectSetInteger(0, "LINE_STRADDLE_SELL", OBJPROP_COLOR, clrRed);
+   ObjectSetInteger(0, "LINE_STRADDLE_SELL", OBJPROP_STYLE, STYLE_SOLID);
    ObjectSetInteger(0, "LINE_STRADDLE_SELL", OBJPROP_WIDTH, 2);
-   ObjectSetString(0, "LINE_STRADDLE_SELL", OBJPROP_TEXT, StringFormat("⚡ BREAKOUT SELL: %dx %.2f (Trigger: -$%.0f | TP +$%.0f)", g_currentStripes, g_currentLot, InpStopDistance, g_activeTPDist));
+   ObjectSetString(0, "LINE_STRADDLE_SELL", OBJPROP_TEXT, StringFormat("⚡ SELL STOP TRIGGER (G): %.2f (-$%.0f)", g_straddleSellTrigger, InpStopDistance));
+
+   // 4. SELL STOP TAKE PROFIT LINE (Soft Coral Red)
+   ObjectDelete(0, "LINE_STRADDLE_SELL_TP");
+   ObjectCreate(0, "LINE_STRADDLE_SELL_TP", OBJ_HLINE, 0, 0, sellTP);
+   ObjectSetInteger(0, "LINE_STRADDLE_SELL_TP", OBJPROP_COLOR, C'248,113,113');
+   ObjectSetInteger(0, "LINE_STRADDLE_SELL_TP", OBJPROP_STYLE, STYLE_DASH);
+   ObjectSetInteger(0, "LINE_STRADDLE_SELL_TP", OBJPROP_WIDTH, 2);
+   ObjectSetString(0, "LINE_STRADDLE_SELL_TP", OBJPROP_TEXT, StringFormat("🎯 SELL TAKE PROFIT: %.2f (-$%.0f TP)", sellTP, g_activeTPDist));
 
    UpdateHUDStatus();
    ChartRedraw(0);
 
-   PrintFormat("⚡ [BREAKOUT WATCH ARMED [G]]: Waiting on %s! Buy Trigger >= %.2f (+$%.0f) | Sell Trigger <= %.2f (-$%.0f) | Barcode: %dx %.2f | TP: +$%.0f",
-               _Symbol, g_straddleBuyTrigger, InpStopDistance, g_straddleSellTrigger, InpStopDistance, g_currentStripes, g_currentLot, g_activeTPDist);
+   PrintFormat("⚡ [BREAKOUT WATCH ARMED [G]]: Waiting on %s! Buy Trigger: %.2f (TP: %.2f | +$%.0f) | Sell Trigger: %.2f (TP: %.2f | -$%.0f) | Barcode: %dx %.2f",
+               _Symbol, g_straddleBuyTrigger, buyTP, InpStopDistance, g_straddleSellTrigger, sellTP, InpStopDistance, g_currentStripes, g_currentLot);
 }
 
 void DisarmStraddleWatch()
@@ -1247,7 +1272,9 @@ void DisarmStraddleWatch()
    g_straddleSellTrigger = 0.0;
    g_straddleArmTime = 0;
    ObjectDelete(0, "LINE_STRADDLE_BUY");
+   ObjectDelete(0, "LINE_STRADDLE_BUY_TP");
    ObjectDelete(0, "LINE_STRADDLE_SELL");
+   ObjectDelete(0, "LINE_STRADDLE_SELL_TP");
    UpdateHUDStatus();
    ChartRedraw(0);
 }
