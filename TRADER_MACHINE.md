@@ -89,10 +89,14 @@ Files in `MQL5/Files`: `mcp_cmd.txt` → `mcp_ack.txt`.
 - Line 1: `COMMAND [args]`; line 2: `TS=<gmt-sec> NONCE=<token>`.
 - Commands: PING, STATUS, SET_LOT, SET_STRIPES, BUY_BARCODE, SELL_BARCODE,
   BUY_LIMIT, SELL_LIMIT, STRADDLE, PANIC_CLOSE.
-- Safety: InpAllowMCP gate (default off), single-use file, 60s freshness,
-  nonce replay guard, whitelist, journaled + shown on panel row 8.
+- Barcodes take atomic `SL=`/`TP=` (absolute): engine applies per stripe,
+  revalidates each burst, ABORTS rather than firing naked. Proven live v5.21.
+- Safety: InpAllowMCP gate (default off) + InpMCPMaxRiskUSD ($2 default, EA-side
+  cap: naked MCP fires refused, over-cap risk refused). Single-use file, 60s
+  freshness, nonce replay guard, whitelist, journaled + panel row 8.
 - Client: `/tmp/mcp_link.py` (to be promoted into `engine/`).
-- **Needed next**: optional `SL=`/`TP=` on fire commands (atomic protection).
+- v5.21 also fixed GetMarginRequired: trusts broker OrderCalcMargin (FBS gold
+  ~1:500) instead of hardcoded 1:100 formula that starved the engine.
 
 ## 7. State log
 
@@ -100,17 +104,18 @@ Files in `MQL5/Files`: `mcp_cmd.txt` → `mcp_ack.txt`.
 - 2026-11-05: $2 test trade → -$1.36 (entry via EA OK; MCP SL set blocked;
   flattened via PANIC_CLOSE). Balance $15.64.
 - 2026-11-05: agent DEBT to owner: **$2** (to be made back, disciplined only).
-- Link status: ARMED on XAUUSD M1. Duplicate EA on XAUUSD H1 removed.
+- Link status: ARMED on XAUUSD M1 (v5.21, cap $2). Duplicate EA on H1 removed.
 - MCP trade tools (send/check/modify): BLOCKED by terminal despite green flags.
+- 2026-11-05: atomic SL/TP proven live (0.01 BUY, SL+TP attached at fire,
+  flattened after verify, cost $0.18). Balance $15.46. Panel restored 0.05x10.
 
 ## 8. Roadmap
 
-1. [ ] Import remaining research batches (vocab, news impact).
-2. [ ] EA: atomic SL/TP on fire commands → compile → push → attach → test.
+1. [ ] Import remaining research batch (price-action vocab) when it lands.
+2. [x] EA: atomic SL/TP on fire commands → compile → push → attach → test. DONE v5.21.
 3. [ ] Promote `mcp_link.py` + brief scripts into `engine/` (durable tooling).
-4. [ ] Build mini-model v1 (data pull + features + latency-measured brief).
-    Spec: Mini-Model Spec v2 (notebook canon, research-grounded). Open items:
-    O1 loop latency, O2 session spread medians, O3 fill slippage log,
-    O4 20-trade paper sample — measured before live autonomy.
+4. [x] Build mini-model v1 (`engine/mini_model.py` + `engine/mt5.py`). DONE.
+    O1 MEASURED: full loop 0.14s warm (0.94s cold first run). O2 started
+    (spread log). O3/O4 pending (fill log, paper sample).
 5. [ ] Paper-trade 5 theses (analysis only, no orders) to calibrate.
 6. [ ] Autonomous micro-trading under §3 gates.
