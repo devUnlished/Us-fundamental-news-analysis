@@ -17,11 +17,11 @@ input double   InpDefaultLot        = 0.05;    // Starting Lot size per stripe
 input group "=== DYNAMIC CALIBRATION ===";
 input bool     InpAutoCalibrateNews = true;    // Auto-calibrate Limit Distance & TP to live news release!
 input double   InpFallbackSpikeDist = 18.0;    // Fallback Limit Offset in Gold $ ($18.00 = 180 pips)
-input double   InpFallbackTPDist    = 55.0;    // Fallback Take Profit in Gold $ ($55.00 = 550 pips)
+input double   InpFallbackTPDist    = 75.0;    // Fallback Take Profit in Gold $ ($75.00 = 750 pips)
 
 input group "=== STRADDLE BREAKOUT BARCODE (G KEY) ===";
-input double   InpStopDistance      = 12.71;   // Breakout Distance in Gold $ ($12.71 = 127.1 pips)
-input double   InpStopTPDistance    = 55.0;    // Take Profit in Gold $ ($55.00 = 550 pips)
+input double   InpStopDistance      = 40.0;    // Breakout Distance in Gold $ ($40.00 = 400 pips)
+input double   InpStopTPDistance    = 75.0;    // Take Profit in Gold $ ($75.00 = 750 pips)
 input double   InpStopSLDistance    = 0.0;     // Stop Loss in Gold $ (0 for none)
 input int      InpStopExpiryMins    = 15;      // Auto-disarm watch after N minutes (0 for no timeout)
 
@@ -58,7 +58,7 @@ double g_currentLot = 0.05;
 int    g_currentStripes = 10;
 string g_activeNewsName = "Standby (Normal)";
 double g_activeSpikeOffset = 18.00; // in Gold dollars ($18.00 = 180 pips)
-double g_activeTPDist = 55.00;      // in Gold dollars ($55.00 = 550 pips)
+double g_activeTPDist = 75.00;      // in Gold dollars ($75.00 = 750 pips)
 string g_activeTier = "STANDARD";
 
 // Auto-pilot state tracking
@@ -293,7 +293,7 @@ void DrawHUD()
    CreateButton("BTN_LLIMIT", lTxt, startX + btnW + gapX, r4_y, btnW, r4_h, C'127,29,29', C'248,113,113', fsBtn, C'185,28,28');
 
    // Row 5: Straddle Stops (G key)
-   string straddleTxt = StringFormat("STRADDLE BREAKOUT BARCODE [G] (±$%.2f)", InpStopDistance);
+   string straddleTxt = StringFormat("STRADDLE BREAKOUT BARCODE [G] (±$%.0f)", InpStopDistance);
    CreateButton("BTN_STRADDLE", straddleTxt, startX, r5_y, totalW, r5_h, C'66,50,15', C'250,204,21', fsBtn, C'161,98,7');
 
    // Row 6: Panic Close Kill Switch
@@ -429,23 +429,23 @@ void CalibrateNewsTargets()
                g_activeNewsName = "FOMC Rate Decision";
                g_activeTier = "BLOWOUT"; 
                g_activeSpikeOffset = 22.0; // 220 pip manipulation wick limit
-               g_activeTPDist = 55.0;      // 550 pip ($55.00) TP target
+               g_activeTPDist = 75.0;      // 750 pip ($75.00) TP target
                isTarget = true;
             }
             else if(StringFind(low, "nonfarm") >= 0 || StringFind(low, "non farm") >= 0)
             {
                g_activeNewsName = "Nonfarm Payrolls (NFP)";
-               if(diff > 68.0)      { g_activeTier = "BLOWOUT"; g_activeSpikeOffset = 25.0; g_activeTPDist = 55.0; }
-               else if(diff > 30.0) { g_activeTier = "SOLID";   g_activeSpikeOffset = 20.0; g_activeTPDist = 55.0; }
-               else                 { g_activeTier = "MODEST";  g_activeSpikeOffset = 18.0; g_activeTPDist = 55.0; }
+               if(diff > 68.0)      { g_activeTier = "BLOWOUT"; g_activeSpikeOffset = 25.0; g_activeTPDist = 75.0; }
+               else if(diff > 30.0) { g_activeTier = "SOLID";   g_activeSpikeOffset = 20.0; g_activeTPDist = 75.0; }
+               else                 { g_activeTier = "MODEST";  g_activeSpikeOffset = 18.0; g_activeTPDist = 75.0; }
                isTarget = true;
             }
             else if(StringFind(low, "cpi") >= 0 || StringFind(low, "consumer price") >= 0)
             {
                g_activeNewsName = "Consumer Price Index (CPI)";
-               if(diff > 0.25)      { g_activeTier = "BLOWOUT"; g_activeSpikeOffset = 22.0; g_activeTPDist = 55.0; }
-               else if(diff > 0.12) { g_activeTier = "SOLID";   g_activeSpikeOffset = 16.0; g_activeTPDist = 55.0; }
-               else                 { g_activeTier = "MODEST";  g_activeSpikeOffset = 12.0; g_activeTPDist = 55.0; }
+               if(diff > 0.25)      { g_activeTier = "BLOWOUT"; g_activeSpikeOffset = 22.0; g_activeTPDist = 75.0; }
+               else if(diff > 0.12) { g_activeTier = "SOLID";   g_activeSpikeOffset = 16.0; g_activeTPDist = 75.0; }
+               else                 { g_activeTier = "MODEST";  g_activeSpikeOffset = 12.0; g_activeTPDist = 75.0; }
                isTarget = true;
             }
 
@@ -630,14 +630,14 @@ void UpdateHUDStatus()
    // Straddle Breakout Watch Button Appearance
    if(g_straddleArmed)
    {
-      ObjectSetString(0, "BTN_STRADDLE", OBJPROP_TEXT, StringFormat("⚡ ARMED: BREAKOUT WATCH [G] (±$%.2f)", InpStopDistance));
+      ObjectSetString(0, "BTN_STRADDLE", OBJPROP_TEXT, StringFormat("⚡ ARMED: BREAKOUT WATCH [G] (±$%.0f)", InpStopDistance));
       ObjectSetInteger(0, "BTN_STRADDLE", OBJPROP_BGCOLOR, C'202,138,4'); // Vibrant Gold Amber
       ObjectSetInteger(0, "BTN_STRADDLE", OBJPROP_COLOR, clrWhite);
       ObjectSetInteger(0, "BTN_STRADDLE", OBJPROP_BORDER_COLOR, C'250,204,21'); // Bright yellow border
    }
    else
    {
-      ObjectSetString(0, "BTN_STRADDLE", OBJPROP_TEXT, StringFormat("STRADDLE BREAKOUT BARCODE [G] (±$%.2f)", InpStopDistance));
+      ObjectSetString(0, "BTN_STRADDLE", OBJPROP_TEXT, StringFormat("STRADDLE BREAKOUT BARCODE [G] (±$%.0f)", InpStopDistance));
       ObjectSetInteger(0, "BTN_STRADDLE", OBJPROP_BGCOLOR, C'66,50,15'); // Dark Bronze
       ObjectSetInteger(0, "BTN_STRADDLE", OBJPROP_COLOR, C'250,204,21');
       ObjectSetInteger(0, "BTN_STRADDLE", OBJPROP_BORDER_COLOR, C'161,98,7');
@@ -1503,7 +1503,7 @@ void DrawStraddleLines(double buyTrig, double buyTP, double sellTrig, double sel
    ObjectSetInteger(0, "LINE_STRADDLE_BUY", OBJPROP_STYLE, STYLE_SOLID);
    ObjectSetInteger(0, "LINE_STRADDLE_BUY", OBJPROP_WIDTH, 2);
    ObjectSetInteger(0, "LINE_STRADDLE_BUY", OBJPROP_SELECTABLE, false);
-   ObjectSetString(0, "LINE_STRADDLE_BUY", OBJPROP_TOOLTIP, StringFormat("BUY STOP Trigger (+$%.2f)", InpStopDistance));
+   ObjectSetString(0, "LINE_STRADDLE_BUY", OBJPROP_TOOLTIP, StringFormat("BUY STOP Trigger (+$%.0f)", InpStopDistance));
 
    // 2. BUY STOP TAKE PROFIT LINE (Mint Green, Dashed, Width 2)
    ObjectDelete(0, "LINE_STRADDLE_BUY_TP");
@@ -1521,7 +1521,7 @@ void DrawStraddleLines(double buyTrig, double buyTP, double sellTrig, double sel
    ObjectSetInteger(0, "LINE_STRADDLE_SELL", OBJPROP_STYLE, STYLE_SOLID);
    ObjectSetInteger(0, "LINE_STRADDLE_SELL", OBJPROP_WIDTH, 2);
    ObjectSetInteger(0, "LINE_STRADDLE_SELL", OBJPROP_SELECTABLE, false);
-   ObjectSetString(0, "LINE_STRADDLE_SELL", OBJPROP_TOOLTIP, StringFormat("SELL STOP Trigger (-$%.2f)", InpStopDistance));
+   ObjectSetString(0, "LINE_STRADDLE_SELL", OBJPROP_TOOLTIP, StringFormat("SELL STOP Trigger (-$%.0f)", InpStopDistance));
 
    // 4. SELL STOP TAKE PROFIT LINE (Coral Red, Dashed, Width 2)
    ObjectDelete(0, "LINE_STRADDLE_SELL_TP");
