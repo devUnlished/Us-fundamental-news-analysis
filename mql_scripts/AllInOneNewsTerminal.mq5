@@ -79,11 +79,14 @@ int             g_barcodeFilled = 0;
 int             g_barcodeBaseOpenCount = 0;
 datetime        g_barcodeStartTime = 0;
 datetime        g_barcodeLastFireTime = 0;
+double          g_barcodeStripeLot = 0.01;
+double          g_learnedMinMargin = 0.0;
 
-int  GetBarcodePositionsCount(ENUM_POSITION_TYPE targetPosType = WRONG_VALUE);
-void ExecuteBarcode(ENUM_ORDER_TYPE orderType, double customLot = 0.0);
-void StartBarcodeEngine(ENUM_ORDER_TYPE orderType, int targetStripes, double lot);
-void ProcessBarcodeEngine();
+int    GetBarcodePositionsCount(ENUM_POSITION_TYPE targetPosType = WRONG_VALUE);
+double GetMarginRequired(ENUM_ORDER_TYPE orderType, double lot);
+void   ExecuteBarcode(ENUM_ORDER_TYPE orderType, double customLot = 0.0);
+void   StartBarcodeEngine(ENUM_ORDER_TYPE orderType, int targetStripes, double lot);
+void   ProcessBarcodeEngine();
 void ArmSpikeLimits(ENUM_ORDER_TYPE orderType);
 void ExecuteStraddleStops();
 void ToggleStraddleWatch();
@@ -573,8 +576,8 @@ void UpdateHUDStatus()
       ENUM_POSITION_TYPE targetPosType = (g_barcodeType == ORDER_TYPE_BUY) ? POSITION_TYPE_BUY : POSITION_TYPE_SELL;
       int liveStripes = GetBarcodePositionsCount(targetPosType);
       string dirStr = (g_barcodeType == ORDER_TYPE_BUY) ? "BUY" : "SELL";
-      string info = StringFormat("⚡ FILLING %s: %d/%d open | Free Margin: $%.1f | TP: +$%.0f", 
-                                 dirStr, liveStripes, g_barcodeTarget, AccountInfoDouble(ACCOUNT_MARGIN_FREE), g_activeTPDist);
+      string info = StringFormat("⚡ FILLING %s: %d/%d open (%.2f lot) | Margin: $%.1f | TP: +$%.0f", 
+                                 dirStr, liveStripes, g_barcodeTarget, g_barcodeStripeLot, AccountInfoDouble(ACCOUNT_MARGIN_FREE), g_activeTPDist);
       ObjectSetString(0, "LBL_STATUS", OBJPROP_TEXT, info);
       ObjectSetInteger(0, "LBL_STATUS", OBJPROP_COLOR, C'250,204,21'); // Amber yellow
    }
@@ -832,21 +835,61 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    }
 }
 
+double GetMarginRequired(ENUM_ORDER_TYPE orderType, double lot)
+{
+   if(lot <= 0.0) return 0.0;
+
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double price = (orderType == ORDER_TYPE_SELL) ? bid : ask;
+
+   double reqMargin = 0.0;
+   bool ok = OrderCalcMargin(orderType, _Symbol, lot, price, reqMargin);
+
+   bool isGold = (StringFind(_Symbol, "XAU") >= 0 || StringFind(_Symbol, "GOLD") >= 0);
+   double contractSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_CONTRACT_SIZE);
+   if(contractSize <= 0.0) contractSize = isGold ? 100.0 : 100000.0;
+
+   long acctLev = AccountInfoInteger(ACCOUNT_LEVERAGE);
+   if(acctLev <= 0) acctLev = 100;
+   double effectiveLev = (double)acctLev;
+   // Retail brokers strictly enforce max 1:100 leverage on Gold (e.g. XM Global, IC Markets, Exness)
+   if(isGold && effectiveLev > 100.0) effectiveLev = 100.0;
+
+   double formulaMargin = (price * contractSize * lot) / effectiveLev;
+
+   // If OrderCalcMargin failed or reported an unrealistically low margin (e.g. using 1:1000 on Gold), use formulaMargin
+   if(!ok || reqMargin <= 0.0 || (isGold && reqMargin < (formulaMargin * 0.85)))
+   {
+      reqMargin = formulaMargin;
+   }
+
+   // Also verify SYMBOL_MARGIN_INITIAL if explicitly configured by broker
+   double marginInitial = SymbolInfoDouble(_Symbol, SYMBOL_MARGIN_INITIAL);
+   if(marginInitial > 0.0)
+   {
+      double initialTotal = marginInitial * lot;
+      if(initialTotal > reqMargin) reqMargin = initialTotal;
+   }
+
+   // Respect learned live broker rejection threshold
+   if(g_learnedMinMargin > 0.0 && lot >= 0.01)
+   {
+      double minFloor = g_learnedMinMargin * (lot / 0.01);
+      if(reqMargin < minFloor) reqMargin = minFloor;
+   }
+
+   return reqMargin;
+}
+
 bool CanAffordBarcode(ENUM_ORDER_TYPE orderType, double &outLotPerStripe)
 {
    double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
-   double leverage = (double)AccountInfoInteger(ACCOUNT_LEVERAGE);
-   if(leverage <= 0) leverage = 100.0;
+   double marginForOneLot = GetMarginRequired(orderType, 1.0);
+   if(marginForOneLot <= 0.0) marginForOneLot = 4128.0;
 
    // 70% of currently available free margin
    double targetMargin = freeMargin * (MathMin(InpMarginPercent, 95.0) / 100.0);
-   double price = (orderType == ORDER_TYPE_SELL) ? SymbolInfoDouble(_Symbol, SYMBOL_BID) : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-   double marginForOneLot = 0.0;
-
-   if(!OrderCalcMargin(orderType, _Symbol, 1.0, price, marginForOneLot) || marginForOneLot <= 0)
-   {
-      marginForOneLot = (price * 100.0) / leverage;
-   }
 
    double totalLots = targetMargin / marginForOneLot;
    double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
@@ -866,7 +909,7 @@ bool CanAffordBarcode(ENUM_ORDER_TYPE orderType, double &outLotPerStripe)
    }
    
    // If not enough for all stripes, check if free margin can at least afford 1 stripe of minLot
-   if(freeMargin >= (marginForOneLot * minLot * 1.5))
+   if(freeMargin >= (marginForOneLot * minLot * 1.2))
    {
       outLotPerStripe = minLot;
       return true;
@@ -918,13 +961,45 @@ void StartBarcodeEngine(ENUM_ORDER_TYPE orderType, int targetStripes, double lot
    g_barcodeStartTime = TimeCurrent();
    g_barcodeLastFireTime = 0;
 
+   // Determine stripe lot: if selected lot is unaffordable even for 1 stripe, dynamically scale to what free margin allows
+   double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   double req = GetMarginRequired(orderType, lot);
+   double buffer = 2.50;
+
+   if(freeMargin < (req + buffer))
+   {
+      double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+      if(minLot <= 0.0) minLot = 0.01;
+      double minReq = GetMarginRequired(orderType, minLot);
+
+      if(freeMargin >= (minReq + buffer))
+      {
+         double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+         if(lotStep <= 0.0) lotStep = 0.01;
+         double affordable = MathFloor(((freeMargin - buffer) * (minLot / minReq)) / lotStep) * lotStep;
+         if(affordable < minLot) affordable = minLot;
+         if(affordable > lot) affordable = lot;
+         g_barcodeStripeLot = affordable;
+         PrintFormat("⚠️ [MARGIN ADAPTATION]: Free Margin $%.2f cannot afford %.2f lot. Scaled stripe lot to %.2f.",
+                     freeMargin, lot, g_barcodeStripeLot);
+      }
+      else
+      {
+         g_barcodeStripeLot = (lot > 0.0) ? lot : 0.01;
+      }
+   }
+   else
+   {
+      g_barcodeStripeLot = (lot > 0.0) ? lot : 0.01;
+   }
+
    trade.SetTypeFilling(GetFillingMode());
    trade.SetExpertMagicNumber(999111);
    trade.SetDeviationInPoints(InpSlippagePoints);
 
    string dir = (orderType == ORDER_TYPE_BUY) ? "BUY" : "SELL";
-   PrintFormat("🚀 [BARCODE ENGINE STARTED]: %s %d stripes at %.2f lots | TP: +$%.0f on %s (Existing open: %d)",
-               dir, g_barcodeTarget, lot, g_activeTPDist, _Symbol, g_barcodeBaseOpenCount);
+   PrintFormat("🚀 [BARCODE ENGINE STARTED]: %s %d stripes at %.2f lots | TP: +$%.0f on %s (Existing open: %d | Free Margin: $%.2f)",
+               dir, g_barcodeTarget, g_barcodeStripeLot, g_activeTPDist, _Symbol, g_barcodeBaseOpenCount, freeMargin);
 
    ProcessBarcodeEngine(); // Fire available initial stripes immediately
 }
@@ -937,6 +1012,12 @@ void ProcessBarcodeEngine()
    int liveStripes = GetBarcodePositionsCount(targetPosType);
    int newlyOpened = liveStripes - g_barcodeBaseOpenCount;
    if(newlyOpened < 0) newlyOpened = 0;
+
+   // Reconcile async orders after 1.5 seconds if some were rejected by broker
+   if(TimeCurrent() - g_barcodeLastFireTime > 1 && g_barcodeFilled > newlyOpened)
+   {
+      g_barcodeFilled = newlyOpened;
+   }
 
    int currentProgress = MathMax(g_barcodeFilled, newlyOpened);
 
@@ -969,21 +1050,8 @@ void ProcessBarcodeEngine()
       return;
    }
 
-   int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
-   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   double price = (g_barcodeType == ORDER_TYPE_SELL) ? bid : ask;
-
-   // Margin calculation for 1 stripe of g_currentLot
-   double reqMargin = 0.0;
-   if(!OrderCalcMargin(g_barcodeType, _Symbol, g_currentLot, price, reqMargin) || reqMargin <= 0.0)
-   {
-      double leverage = (double)AccountInfoInteger(ACCOUNT_LEVERAGE);
-      if(leverage <= 0) leverage = 100.0;
-      reqMargin = (price * 100.0 * g_currentLot) / leverage;
-   }
-
-   double safetyBuffer = 1.50; // $1.50 margin buffer to prevent [No money] rejection
+   double reqMargin = GetMarginRequired(g_barcodeType, g_barcodeStripeLot);
+   double safetyBuffer = 2.50; // $2.50 margin buffer to prevent [No money] rejection
    double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
 
    // If free margin cannot afford another stripe right now, wait for floating profit to expand margin!
@@ -992,30 +1060,28 @@ void ProcessBarcodeEngine()
       return;
    }
 
-   trade.SetTypeFilling(GetFillingMode());
-   trade.SetExpertMagicNumber(999111);
-   trade.SetDeviationInPoints(InpSlippagePoints);
-
    int canAfford = (int)MathFloor((freeMargin - safetyBuffer) / reqMargin);
    if(canAfford <= 0) return;
 
    int remaining = g_barcodeTarget - currentProgress;
    int toFireNow = MathMin(canAfford, remaining);
+   // Cap burst to max 10 stripes per execution wave to allow rapid execution and margin updates
+   toFireNow = MathMin(toFireNow, 10);
+   if(toFireNow <= 0) return;
 
+   int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
    int firedInThisBurst = 0;
+
+   trade.SetTypeFilling(GetFillingMode());
+   trade.SetExpertMagicNumber(999111);
+   trade.SetDeviationInPoints(InpSlippagePoints);
+
    for(int i = 0; i < toFireNow; i++)
    {
-      // Re-verify live free margin immediately before every trade dispatch
-      freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
-      if(freeMargin < (reqMargin + safetyBuffer))
-      {
-         PrintFormat("⏳ [BARCODE MARGIN PAUSE]: Consumed available margin. %d/%d open. Waiting for floating profit to expand margin...",
-                     GetBarcodePositionsCount(targetPosType), g_barcodeTarget);
-         break;
-      }
+      double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+      double price = (g_barcodeType == ORDER_TYPE_SELL) ? bid : ask;
 
-      ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-      bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
       double tp = 0.0;
       if(g_activeTPDist > 0.0)
       {
@@ -1023,24 +1089,57 @@ void ProcessBarcodeEngine()
       }
 
       string comment = StringFormat("Barcode %d/%d", currentProgress + firedInThisBurst + 1, g_barcodeTarget);
-      bool ok = false;
-      if(g_barcodeType == ORDER_TYPE_BUY)
-         ok = trade.Buy(g_currentLot, _Symbol, ask, 0.0, tp, comment);
-      else
-         ok = trade.Sell(g_currentLot, _Symbol, bid, 0.0, tp, comment);
 
-      if(ok && (trade.ResultRetcode() == TRADE_RETCODE_DONE || trade.ResultRetcode() == TRADE_RETCODE_PLACED))
+      MqlTradeRequest request;
+      MqlTradeResult  result;
+      ZeroMemory(request);
+      ZeroMemory(result);
+
+      request.action       = TRADE_ACTION_DEAL;
+      request.symbol       = _Symbol;
+      request.volume       = g_barcodeStripeLot;
+      request.type         = g_barcodeType;
+      request.price        = price;
+      request.sl           = 0.0;
+      request.tp           = tp;
+      request.deviation    = InpSlippagePoints;
+      request.magic        = 999111;
+      request.comment      = comment;
+      request.type_filling = GetFillingMode();
+
+      bool ok = false;
+      if(OrderSendAsync(request, result))
       {
+         ok = true;
          firedInThisBurst++;
          g_barcodeFilled++;
          g_barcodeLastFireTime = TimeCurrent();
       }
       else
       {
-         uint ret = trade.ResultRetcode();
-         PrintFormat("⚠️ [BARCODE RETRY LATER]: Order send paused (code %u: %s). Free Margin: $%.2f",
-                     ret, trade.ResultRetcodeDescription(), AccountInfoDouble(ACCOUNT_MARGIN_FREE));
-         break;
+         // Fallback sync send
+         if(g_barcodeType == ORDER_TYPE_BUY)
+            ok = trade.Buy(g_barcodeStripeLot, _Symbol, ask, 0.0, tp, comment);
+         else
+            ok = trade.Sell(g_barcodeStripeLot, _Symbol, bid, 0.0, tp, comment);
+
+         if(ok && (trade.ResultRetcode() == TRADE_RETCODE_DONE || trade.ResultRetcode() == TRADE_RETCODE_PLACED))
+         {
+            firedInThisBurst++;
+            g_barcodeFilled++;
+            g_barcodeLastFireTime = TimeCurrent();
+         }
+         else
+         {
+            uint ret = trade.ResultRetcode();
+            if(ret == TRADE_RETCODE_NO_MONEY || ret == 10019)
+            {
+               g_learnedMinMargin = MathMax(g_learnedMinMargin, AccountInfoDouble(ACCOUNT_MARGIN_FREE) + 2.0);
+            }
+            PrintFormat("⚠️ [BARCODE RETRY LATER]: Order send paused (code %u: %s). Free Margin: $%.2f",
+                        ret, trade.ResultRetcodeDescription(), AccountInfoDouble(ACCOUNT_MARGIN_FREE));
+            break;
+         }
       }
    }
 
@@ -1071,15 +1170,10 @@ void ExecuteBarcode(ENUM_ORDER_TYPE orderType, double customLot = 0.0)
 void ArmSpikeLimits(ENUM_ORDER_TYPE orderType)
 {
    double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
-   double leverage = (double)AccountInfoInteger(ACCOUNT_LEVERAGE);
-   if(leverage <= 0) leverage = 100.0;
+   double marginForOneLot = GetMarginRequired(ORDER_TYPE_BUY, 1.0);
+   if(marginForOneLot <= 0.0) marginForOneLot = 4128.0;
 
    double targetMargin = freeMargin * (MathMin(InpMarginPercent, 95.0) / 100.0);
-   double marginForOneLot = 0.0;
-   if(!OrderCalcMargin(ORDER_TYPE_BUY, _Symbol, 1.0, SymbolInfoDouble(_Symbol, SYMBOL_ASK), marginForOneLot) || marginForOneLot <= 0)
-   {
-      marginForOneLot = (SymbolInfoDouble(_Symbol, SYMBOL_ASK) * 100.0) / leverage;
-   }
 
    double totalLots = targetMargin / marginForOneLot;
    double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
@@ -1367,6 +1461,18 @@ void CheckStraddleBreakout()
          DisarmStraddleWatch();
          return;
       }
+   }
+
+   // Sync dynamic trigger levels if user moved lines on chart
+   if(ObjectFind(0, "LINE_STRADDLE_BUY") >= 0)
+   {
+      double p = ObjectGetDouble(0, "LINE_STRADDLE_BUY", OBJPROP_PRICE);
+      if(p > 0.0) g_straddleBuyTrigger = p;
+   }
+   if(ObjectFind(0, "LINE_STRADDLE_SELL") >= 0)
+   {
+      double p = ObjectGetDouble(0, "LINE_STRADDLE_SELL", OBJPROP_PRICE);
+      if(p > 0.0) g_straddleSellTrigger = p;
    }
 
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
