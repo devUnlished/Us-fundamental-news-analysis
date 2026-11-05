@@ -109,6 +109,7 @@ void CheckStraddleBreakout();
 bool CanAffordBarcode(ENUM_ORDER_TYPE orderType, double &outLotPerStripe);
 double GetPipSize();
 ENUM_ORDER_TYPE_FILLING GetFillingMode();
+void RemoveChartTextClutter();
 void PollMCPCommand();
 void WriteMCPAck(string status, string nonce, string detail);
 string ExecuteMCPCommand(string cmdLine, bool &ok);
@@ -719,6 +720,7 @@ int OnInit()
    g_currentStripes = (InpNumberOfStripes > 0) ? InpNumberOfStripes : 10;
    g_activeTPDist = InpFallbackTPDist;
 
+   RemoveChartTextClutter();
    DrawHUD();
    UpdateHUDStatus();
    EventSetMillisecondTimer(50); // Superfast 50ms reaction cycle
@@ -1409,9 +1411,47 @@ void ArmStraddleWatch()
                _Symbol, g_straddleBuyTrigger, buyTP, g_straddleSellTrigger, sellTP, g_currentStripes, g_currentLot);
 }
 
+void RemoveChartTextClutter()
+{
+   ChartSetInteger(0, CHART_SHOW_OBJECT_DESCR, false);
+   ChartSetInteger(0, CHART_SHOW_TRADE_HISTORY, false);
+
+   int total = ObjectsTotal(0, 0, -1);
+   for(int i = total - 1; i >= 0; i--)
+   {
+      string name = ObjectName(0, i, 0, -1);
+      
+      // Never delete our own UI panel elements
+      if(StringFind(name, "BTN_") == 0 || StringFind(name, "LBL_") == 0 ||
+         StringFind(name, "BOX_") == 0 || StringFind(name, "EDT_") == 0 ||
+         StringFind(name, "LINE_STRADDLE") == 0)
+      {
+         continue;
+      }
+      
+      ENUM_OBJECT type = (ENUM_OBJECT)ObjectGetInteger(0, name, OBJPROP_TYPE);
+      if(type == OBJ_ARROW || type == OBJ_ARROW_BUY || type == OBJ_ARROW_SELL ||
+         type == OBJ_ARROW_CHECK || type == OBJ_ARROW_DOWN || type == OBJ_ARROW_UP ||
+         type == OBJ_ARROW_STOP || type == OBJ_EVENT || type == OBJ_TEXT)
+      {
+         ObjectDelete(0, name);
+      }
+      else if(type == OBJ_TREND)
+      {
+         string text = ObjectGetString(0, name, OBJPROP_TEXT);
+         if(StringFind(text, "->") >= 0 || StringFind(name, "#") >= 0)
+         {
+            ObjectDelete(0, name);
+         }
+      }
+   }
+   ChartRedraw(0);
+}
+
 void DrawStraddleLines(double buyTrig, double buyTP, double sellTrig, double sellTP)
 {
-   ChartSetInteger(0, CHART_SHOW_OBJECT_DESCR, true);
+   // Turn off text clutter globally across the chart
+   RemoveChartTextClutter();
 
    // 1. BUY STOP TRIGGER LINE (Lime Green, Solid, Width 2)
    ObjectDelete(0, "LINE_STRADDLE_BUY");
@@ -1419,7 +1459,8 @@ void DrawStraddleLines(double buyTrig, double buyTP, double sellTrig, double sel
    ObjectSetInteger(0, "LINE_STRADDLE_BUY", OBJPROP_COLOR, clrLime);
    ObjectSetInteger(0, "LINE_STRADDLE_BUY", OBJPROP_STYLE, STYLE_SOLID);
    ObjectSetInteger(0, "LINE_STRADDLE_BUY", OBJPROP_WIDTH, 2);
-   ObjectSetString(0, "LINE_STRADDLE_BUY", OBJPROP_TEXT, StringFormat("BUY STOP (+$%.2f)", InpStopDistance));
+   ObjectSetInteger(0, "LINE_STRADDLE_BUY", OBJPROP_SELECTABLE, false);
+   ObjectSetString(0, "LINE_STRADDLE_BUY", OBJPROP_TOOLTIP, StringFormat("BUY STOP Trigger (+$%.2f)", InpStopDistance));
 
    // 2. BUY STOP TAKE PROFIT LINE (Mint Green, Dashed, Width 2)
    ObjectDelete(0, "LINE_STRADDLE_BUY_TP");
@@ -1427,7 +1468,8 @@ void DrawStraddleLines(double buyTrig, double buyTP, double sellTrig, double sel
    ObjectSetInteger(0, "LINE_STRADDLE_BUY_TP", OBJPROP_COLOR, C'52,211,153');
    ObjectSetInteger(0, "LINE_STRADDLE_BUY_TP", OBJPROP_STYLE, STYLE_DASH);
    ObjectSetInteger(0, "LINE_STRADDLE_BUY_TP", OBJPROP_WIDTH, 2);
-   ObjectSetString(0, "LINE_STRADDLE_BUY_TP", OBJPROP_TEXT, StringFormat("BUY TP (+$%.0f)", g_activeTPDist));
+   ObjectSetInteger(0, "LINE_STRADDLE_BUY_TP", OBJPROP_SELECTABLE, false);
+   ObjectSetString(0, "LINE_STRADDLE_BUY_TP", OBJPROP_TOOLTIP, StringFormat("BUY TP (+$%.0f)", g_activeTPDist));
 
    // 3. SELL STOP TRIGGER LINE (Neon Red, Solid, Width 2)
    ObjectDelete(0, "LINE_STRADDLE_SELL");
@@ -1435,7 +1477,8 @@ void DrawStraddleLines(double buyTrig, double buyTP, double sellTrig, double sel
    ObjectSetInteger(0, "LINE_STRADDLE_SELL", OBJPROP_COLOR, clrRed);
    ObjectSetInteger(0, "LINE_STRADDLE_SELL", OBJPROP_STYLE, STYLE_SOLID);
    ObjectSetInteger(0, "LINE_STRADDLE_SELL", OBJPROP_WIDTH, 2);
-   ObjectSetString(0, "LINE_STRADDLE_SELL", OBJPROP_TEXT, StringFormat("SELL STOP (-$%.2f)", InpStopDistance));
+   ObjectSetInteger(0, "LINE_STRADDLE_SELL", OBJPROP_SELECTABLE, false);
+   ObjectSetString(0, "LINE_STRADDLE_SELL", OBJPROP_TOOLTIP, StringFormat("SELL STOP Trigger (-$%.2f)", InpStopDistance));
 
    // 4. SELL STOP TAKE PROFIT LINE (Coral Red, Dashed, Width 2)
    ObjectDelete(0, "LINE_STRADDLE_SELL_TP");
@@ -1443,7 +1486,8 @@ void DrawStraddleLines(double buyTrig, double buyTP, double sellTrig, double sel
    ObjectSetInteger(0, "LINE_STRADDLE_SELL_TP", OBJPROP_COLOR, C'248,113,113');
    ObjectSetInteger(0, "LINE_STRADDLE_SELL_TP", OBJPROP_STYLE, STYLE_DASH);
    ObjectSetInteger(0, "LINE_STRADDLE_SELL_TP", OBJPROP_WIDTH, 2);
-   ObjectSetString(0, "LINE_STRADDLE_SELL_TP", OBJPROP_TEXT, StringFormat("SELL TP (-$%.0f)", g_activeTPDist));
+   ObjectSetInteger(0, "LINE_STRADDLE_SELL_TP", OBJPROP_SELECTABLE, false);
+   ObjectSetString(0, "LINE_STRADDLE_SELL_TP", OBJPROP_TOOLTIP, StringFormat("SELL TP (-$%.0f)", g_activeTPDist));
 
    ChartRedraw(0);
 }
@@ -1469,6 +1513,8 @@ void DisarmStraddleWatch()
    ObjectDelete(0, "LINE_STRADDLE_BUY_TP");
    ObjectDelete(0, "LINE_STRADDLE_SELL");
    ObjectDelete(0, "LINE_STRADDLE_SELL_TP");
+
+   RemoveChartTextClutter();
 
    // Restore natural flexible price scaling
    ChartSetInteger(0, CHART_SCALEFIX, false);
