@@ -17,11 +17,11 @@ input double   InpDefaultLot        = 0.05;    // Starting Lot size per stripe
 input group "=== DYNAMIC CALIBRATION ===";
 input bool     InpAutoCalibrateNews = true;    // Auto-calibrate Limit Distance & TP to live news release!
 input double   InpFallbackSpikeDist = 18.0;    // Fallback Limit Offset in Gold $ ($18.00 = 180 pips)
-input double   InpFallbackTPDist    = 55.0;    // Fallback Take Profit in Gold $ ($55.00 = 550 pips)
+input double   InpFallbackTPDist    = 100.0;   // Fallback Take Profit in Gold $ ($100.00 = 1000 pips)
 
 input group "=== STRADDLE BREAKOUT BARCODE (G KEY) ===";
 input double   InpStopDistancePips  = 50.0;    // Breakout Distance in Pips (50 pips = $5.00 on Gold)
-input double   InpStopTPDistancePips= 550.0;   // Take Profit in Pips (550 pips = $55.00 on Gold)
+input double   InpStopTPDistancePips= 1000.0;  // Take Profit in Pips (1000 pips = $100.00 on Gold)
 input double   InpStopSLDistancePips= 0.0;     // Stop Loss in Pips (0 for none)
 input int      InpStopExpiryMins    = 15;      // Auto-disarm watch after N minutes (0 for no timeout)
 
@@ -54,7 +54,7 @@ double g_currentLot = 0.05;
 int    g_currentStripes = 10;
 string g_activeNewsName = "Standby (Normal)";
 double g_activeSpikeOffset = 18.00; // in Gold dollars ($18.00 = 180 pips)
-double g_activeTPDist = 55.00;      // in Gold dollars ($55.00 = 550 pips)
+double g_activeTPDist = 100.00;     // in Gold dollars ($100.00 = 1000 pips)
 string g_activeTier = "STANDARD";
 
 // Auto-pilot state tracking
@@ -392,23 +392,23 @@ void CalibrateNewsTargets()
                g_activeNewsName = "FOMC Rate Decision";
                g_activeTier = "BLOWOUT"; 
                g_activeSpikeOffset = 22.0; // 220 pip manipulation wick limit
-               g_activeTPDist = 55.0;      // 550 pip ($55.00) TP target
+               g_activeTPDist = 100.0;     // 1000 pip ($100.00) TP target
                isTarget = true;
             }
             else if(StringFind(low, "nonfarm") >= 0 || StringFind(low, "non farm") >= 0)
             {
                g_activeNewsName = "Nonfarm Payrolls (NFP)";
-               if(diff > 68.0)      { g_activeTier = "BLOWOUT"; g_activeSpikeOffset = 25.0; g_activeTPDist = 55.0; }
-               else if(diff > 30.0) { g_activeTier = "SOLID";   g_activeSpikeOffset = 20.0; g_activeTPDist = 55.0; }
-               else                 { g_activeTier = "MODEST";  g_activeSpikeOffset = 18.0; g_activeTPDist = 55.0; }
+               if(diff > 68.0)      { g_activeTier = "BLOWOUT"; g_activeSpikeOffset = 25.0; g_activeTPDist = 100.0; }
+               else if(diff > 30.0) { g_activeTier = "SOLID";   g_activeSpikeOffset = 20.0; g_activeTPDist = 100.0; }
+               else                 { g_activeTier = "MODEST";  g_activeSpikeOffset = 18.0; g_activeTPDist = 100.0; }
                isTarget = true;
             }
             else if(StringFind(low, "cpi") >= 0 || StringFind(low, "consumer price") >= 0)
             {
                g_activeNewsName = "Consumer Price Index (CPI)";
-               if(diff > 0.25)      { g_activeTier = "BLOWOUT"; g_activeSpikeOffset = 22.0; g_activeTPDist = 55.0; }
-               else if(diff > 0.12) { g_activeTier = "SOLID";   g_activeSpikeOffset = 16.0; g_activeTPDist = 55.0; }
-               else                 { g_activeTier = "MODEST";  g_activeSpikeOffset = 12.0; g_activeTPDist = 55.0; }
+               if(diff > 0.25)      { g_activeTier = "BLOWOUT"; g_activeSpikeOffset = 22.0; g_activeTPDist = 100.0; }
+               else if(diff > 0.12) { g_activeTier = "SOLID";   g_activeSpikeOffset = 16.0; g_activeTPDist = 100.0; }
+               else                 { g_activeTier = "MODEST";  g_activeSpikeOffset = 12.0; g_activeTPDist = 100.0; }
                isTarget = true;
             }
 
