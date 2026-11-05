@@ -80,6 +80,7 @@ bool            g_barcodeActive = false;
 ENUM_ORDER_TYPE g_barcodeType   = WRONG_VALUE;
 int             g_barcodeTarget = 0;
 int             g_barcodeFilled = 0;
+int             g_barcodeMaxLiveSeen = 0;
 int             g_barcodeBaseOpenCount = 0;
 datetime        g_barcodeStartTime = 0;
 datetime        g_barcodeLastFireTime = 0;
@@ -1022,6 +1023,7 @@ void StartBarcodeEngine(ENUM_ORDER_TYPE orderType, int targetStripes, double lot
    g_barcodeType   = orderType;
    g_barcodeTarget = (targetStripes > 0) ? targetStripes : 10;
    g_barcodeFilled = 0;
+   g_barcodeMaxLiveSeen = 0;
    
    ENUM_POSITION_TYPE targetPosType = (orderType == ORDER_TYPE_BUY) ? POSITION_TYPE_BUY : POSITION_TYPE_SELL;
    g_barcodeBaseOpenCount = GetBarcodePositionsCount(targetPosType);
@@ -1081,6 +1083,11 @@ void ProcessBarcodeEngine()
    int newlyOpened = liveStripes - g_barcodeBaseOpenCount;
    if(newlyOpened < 0) newlyOpened = 0;
 
+   if(newlyOpened > g_barcodeMaxLiveSeen)
+   {
+      g_barcodeMaxLiveSeen = newlyOpened;
+   }
+
    // Reconcile async orders after 1.5 seconds if some were rejected by broker
    if(TimeCurrent() - g_barcodeLastFireTime > 1 && g_barcodeFilled > newlyOpened)
    {
@@ -1090,21 +1097,26 @@ void ProcessBarcodeEngine()
    int currentProgress = MathMax(g_barcodeFilled, newlyOpened);
 
    // Check if the user's stripe target has been completely achieved
-   if(currentProgress >= g_barcodeTarget)
+   if(newlyOpened >= g_barcodeTarget)
    {
       PrintFormat("🎉 [BARCODE FULLY FILLED]: All %d/%d stripes active on %s! Engine complete.", 
-                  currentProgress, g_barcodeTarget, _Symbol);
+                  newlyOpened, g_barcodeTarget, _Symbol);
       g_barcodeActive = false;
+      g_barcodeMaxLiveSeen = 0;
       g_mcpSL = 0.0; g_mcpTP = 0.0;
       UpdateHUDStatus();
       return;
    }
 
-   // If stripes were opened and now all stripes closed (e.g. hit TP or closed by trader), finish engine
-   if(g_barcodeFilled > 0 && liveStripes == 0)
+   // If stripes were opened and now all stripes closed (e.g. hit TP or closed by trader), finish engine.
+   // Safety: must have actually had confirmed live stripes (g_barcodeMaxLiveSeen > 0)
+   // AND at least 3 seconds must have passed since firing so in-flight orders are done.
+   if(g_barcodeMaxLiveSeen > 0 && liveStripes == 0 && (TimeCurrent() - g_barcodeLastFireTime >= 3))
    {
-      PrintFormat("🏁 [BARCODE FINISHED]: Open stripes closed/TP reached on %s. Disarming engine.", _Symbol);
+      PrintFormat("🏁 [BARCODE FINISHED]: Open stripes closed/TP reached on %s (peak: %d positions). Disarming engine.", 
+                  _Symbol, g_barcodeMaxLiveSeen);
       g_barcodeActive = false;
+      g_barcodeMaxLiveSeen = 0;
       g_mcpSL = 0.0; g_mcpTP = 0.0;
       UpdateHUDStatus();
       return;
@@ -1114,8 +1126,9 @@ void ProcessBarcodeEngine()
    if(TimeCurrent() - g_barcodeStartTime > 900)
    {
       PrintFormat("⏱️ [BARCODE TIMEOUT]: Active window (15m) ended. Filled %d/%d stripes on %s.", 
-                  currentProgress, g_barcodeTarget, _Symbol);
+                  newlyOpened, g_barcodeTarget, _Symbol);
       g_barcodeActive = false;
+      g_barcodeMaxLiveSeen = 0;
       g_mcpSL = 0.0; g_mcpTP = 0.0;
       UpdateHUDStatus();
       return;
@@ -1132,7 +1145,7 @@ void ProcessBarcodeEngine()
       if(TimeCurrent() - lastWaitPrint >= 5)
       {
          PrintFormat("⏳ [BARCODE WAITING]: need $%.2f margin, have $%.2f free. Waiting for margin expansion (%d/%d filled).",
-                     reqMargin + safetyBuffer, freeMargin, currentProgress, g_barcodeTarget);
+                     reqMargin + safetyBuffer, freeMargin, newlyOpened, g_barcodeTarget);
          lastWaitPrint = TimeCurrent();
       }
       return;
@@ -1142,9 +1155,10 @@ void ProcessBarcodeEngine()
    if(canAfford <= 0) return;
 
    int remaining = g_barcodeTarget - currentProgress;
+   if(remaining <= 0) return;
+
    int toFireNow = MathMin(canAfford, remaining);
-   // Cap burst to max 10 stripes per execution wave to allow rapid execution and margin updates
-   toFireNow = MathMin(toFireNow, 10);
+   if(toFireNow > 30) toFireNow = 30;
    if(toFireNow <= 0) return;
 
    int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
@@ -1247,11 +1261,12 @@ void ProcessBarcodeEngine()
                   firedInThisBurst, currentOpen, g_barcodeTarget, AccountInfoDouble(ACCOUNT_MARGIN_FREE), g_activeTPDist);
       UpdateHUDStatus();
 
-      if(currentOpen - g_barcodeBaseOpenCount >= g_barcodeTarget || g_barcodeFilled >= g_barcodeTarget)
+      if(currentOpen - g_barcodeBaseOpenCount >= g_barcodeTarget)
       {
          PrintFormat("🎉 [BARCODE FULLY FILLED]: All %d/%d stripes successfully filled on %s!", 
                      g_barcodeTarget, g_barcodeTarget, _Symbol);
          g_barcodeActive = false;
+         g_barcodeMaxLiveSeen = 0;
          g_mcpSL = 0.0; g_mcpTP = 0.0;
          UpdateHUDStatus();
       }
@@ -1323,6 +1338,7 @@ void ArmSpikeLimits(ENUM_ORDER_TYPE orderType)
 void ExecuteEmergencyClose()
 {
    g_barcodeActive = false;
+   g_barcodeMaxLiveSeen = 0;
    g_mcpSL = 0.0; g_mcpTP = 0.0; g_mcpArmedRun = false;
    g_barcodeTarget = 0;
    g_barcodeFilled = 0;
