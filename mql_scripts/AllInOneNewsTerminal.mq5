@@ -6,7 +6,7 @@
 //+------------------------------------------------------------------+
 #property copyright "News Sniper Terminal"
 #property link      "https://github.com/devUnlished/Us-fundamental-news-analysis"
-#property version   "5.10"
+#property version   "5.20"
 
 #include <Trade\Trade.mqh>
 
@@ -51,6 +51,7 @@ input int      InpStartY            = 30;      // Panel Y Position on Chart
 
 input group "=== MCP COMMAND LINK ===";
 input bool     InpAllowMCP          = false;   // Allow external MCP agent commands via command file (OFF = manual only)
+input double   InpMCPMaxRiskUSD     = 2.0;     // Max $ risk per MCP-fired barcode (0 = no EA-side cap)
 
 CTrade trade;
 double g_currentLot = 0.05;
@@ -93,6 +94,9 @@ string   g_mcpLastNonce = "";
 string   g_mcpLastCmd = "none";
 string   g_mcpLastResult = "";
 datetime g_mcpLastCmdTime = 0;
+double   g_mcpSL = 0.0;      // Absolute SL price for one MCP-fired barcode run (0 = none)
+double   g_mcpTP = 0.0;      // Absolute TP price for one MCP-fired barcode run (0 = engine default)
+bool     g_mcpArmedRun = false; // One-shot latch: next StartBarcodeEngine keeps SL/TP, else clears
 
 int    GetBarcodePositionsCount(ENUM_POSITION_TYPE targetPosType = WRONG_VALUE);
 double GetMarginRequired(ENUM_ORDER_TYPE orderType, double lot);
@@ -112,6 +116,8 @@ ENUM_ORDER_TYPE_FILLING GetFillingMode();
 void PollMCPCommand();
 void WriteMCPAck(string status, string nonce, string detail);
 string ExecuteMCPCommand(string cmdLine, bool &ok);
+bool MCPProtectionValid(double bid, double ask, double sl, double tp, ENUM_ORDER_TYPE type, string &reason);
+string MCPFireBarcode(ENUM_ORDER_TYPE type, string &parts[], int count, bool &ok);
 
 void CreateButton(string name, string text, int x, int y, int w, int h, color bg, color fg, int fontSize = 10, color border = clrNONE)
 {
@@ -724,7 +730,7 @@ int OnInit()
    EventSetMillisecondTimer(50); // Superfast 50ms reaction cycle
    FileDelete(MCP_CMD_FILE); // Never execute a leftover command from a previous session
    FileDelete(MCP_ACK_FILE);
-   PrintFormat(">>> NEWS TERMINAL 5.10 ACTIVE: Calibrated Wick Limits & Dynamic TP ($%.0f) Running! MCP link: %s <<<", g_activeTPDist, InpAllowMCP ? "ARMED" : "OFF");
+   PrintFormat(">>> NEWS TERMINAL 5.20 ACTIVE: Calibrated Wick Limits & Dynamic TP ($%.0f) Running! MCP link: %s <<<", g_activeTPDist, InpAllowMCP ? "ARMED" : "OFF");
 
    // Retain armed stops across timeframe switches!
    string gvPrefix = StringFormat("AION_%s_", _Symbol);
@@ -997,6 +1003,10 @@ int GetBarcodePositionsCount(ENUM_POSITION_TYPE targetPosType = WRONG_VALUE)
 
 void StartBarcodeEngine(ENUM_ORDER_TYPE orderType, int targetStripes, double lot)
 {
+   // One-shot MCP protection: an MCP fire command sets the latch + SL/TP just
+   // before calling in. Any other (manual/hotkey/straddle) start clears stale values.
+   if(!g_mcpArmedRun) { g_mcpSL = 0.0; g_mcpTP = 0.0; }
+   else { g_mcpArmedRun = false; }
    g_barcodeActive = true;
    g_barcodeType   = orderType;
    g_barcodeTarget = (targetStripes > 0) ? targetStripes : 10;
@@ -1074,6 +1084,7 @@ void ProcessBarcodeEngine()
       PrintFormat("🎉 [BARCODE FULLY FILLED]: All %d/%d stripes active on %s! Engine complete.", 
                   currentProgress, g_barcodeTarget, _Symbol);
       g_barcodeActive = false;
+      g_mcpSL = 0.0; g_mcpTP = 0.0;
       UpdateHUDStatus();
       return;
    }
@@ -1083,6 +1094,7 @@ void ProcessBarcodeEngine()
    {
       PrintFormat("🏁 [BARCODE FINISHED]: Open stripes closed/TP reached on %s. Disarming engine.", _Symbol);
       g_barcodeActive = false;
+      g_mcpSL = 0.0; g_mcpTP = 0.0;
       UpdateHUDStatus();
       return;
    }
@@ -1093,6 +1105,7 @@ void ProcessBarcodeEngine()
       PrintFormat("⏱️ [BARCODE TIMEOUT]: Active window (15m) ended. Filled %d/%d stripes on %s.", 
                   currentProgress, g_barcodeTarget, _Symbol);
       g_barcodeActive = false;
+      g_mcpSL = 0.0; g_mcpTP = 0.0;
       UpdateHUDStatus();
       return;
    }
@@ -1135,6 +1148,25 @@ void ProcessBarcodeEngine()
          tp = (g_barcodeType == ORDER_TYPE_SELL) ? NormalizeDouble(bid - g_activeTPDist, digits) : NormalizeDouble(ask + g_activeTPDist, digits);
       }
 
+      // MCP-protected run: apply command SL/TP, revalidated every burst.
+      // If protection went invalid (price moved through it), abort the run:
+      // an MCP-protected barcode never fires naked.
+      double sl = 0.0;
+      if(g_mcpSL > 0.0 || g_mcpTP > 0.0)
+      {
+         string mcpWhy = "";
+         if(!MCPProtectionValid(bid, ask, g_mcpSL, g_mcpTP, g_barcodeType, mcpWhy))
+         {
+            PrintFormat("🛑 [BARCODE ABORTED]: MCP protection invalid at fire time (%s). Engine stopped, no naked fill.", mcpWhy);
+            g_barcodeActive = false;
+            g_mcpSL = 0.0; g_mcpTP = 0.0;
+            UpdateHUDStatus();
+            return;
+         }
+         if(g_mcpSL > 0.0) sl = NormalizeDouble(g_mcpSL, digits);
+         if(g_mcpTP > 0.0) tp = NormalizeDouble(g_mcpTP, digits);
+      }
+
       string comment = StringFormat("Barcode %d/%d", currentProgress + firedInThisBurst + 1, g_barcodeTarget);
 
       MqlTradeRequest request;
@@ -1147,7 +1179,7 @@ void ProcessBarcodeEngine()
       request.volume       = g_barcodeStripeLot;
       request.type         = g_barcodeType;
       request.price        = price;
-      request.sl           = 0.0;
+      request.sl           = sl;
       request.tp           = tp;
       request.deviation    = InpSlippagePoints;
       request.magic        = 999111;
@@ -1166,9 +1198,9 @@ void ProcessBarcodeEngine()
       {
          // Fallback sync send
          if(g_barcodeType == ORDER_TYPE_BUY)
-            ok = trade.Buy(g_barcodeStripeLot, _Symbol, ask, 0.0, tp, comment);
+            ok = trade.Buy(g_barcodeStripeLot, _Symbol, ask, sl, tp, comment);
          else
-            ok = trade.Sell(g_barcodeStripeLot, _Symbol, bid, 0.0, tp, comment);
+            ok = trade.Sell(g_barcodeStripeLot, _Symbol, bid, sl, tp, comment);
 
          if(ok && (trade.ResultRetcode() == TRADE_RETCODE_DONE || trade.ResultRetcode() == TRADE_RETCODE_PLACED))
          {
@@ -1202,6 +1234,7 @@ void ProcessBarcodeEngine()
          PrintFormat("🎉 [BARCODE FULLY FILLED]: All %d/%d stripes successfully filled on %s!", 
                      g_barcodeTarget, g_barcodeTarget, _Symbol);
          g_barcodeActive = false;
+         g_mcpSL = 0.0; g_mcpTP = 0.0;
          UpdateHUDStatus();
       }
    }
@@ -1272,6 +1305,7 @@ void ArmSpikeLimits(ENUM_ORDER_TYPE orderType)
 void ExecuteEmergencyClose()
 {
    g_barcodeActive = false;
+   g_mcpSL = 0.0; g_mcpTP = 0.0; g_mcpArmedRun = false;
    g_barcodeTarget = 0;
    g_barcodeFilled = 0;
    DisarmStraddleWatch();
@@ -1557,10 +1591,13 @@ void CheckStraddleBreakout()
 //|   mcp_cmd.txt line 1: COMMAND [args...]                          |
 //|   mcp_cmd.txt line 2: TS=<TimeGMT seconds> NONCE=<unique token>   |
 //|   mcp_ack.txt: STATUS NONCE detail...  (STATUS = OK or ERR)       |
-//|                                                                  |
+//| Fire commands take atomic SL=/TP= (absolute prices):             |
+//|   BUY_BARCODE SL=4125.20 TP=4131.20                              |
 //| Safety: single-use file (deleted on read), 60s freshness window, |
 //| nonce replay guard, whitelisted commands only, gated behind      |
-//| InpAllowMCP. Every command is journaled and shown on the panel.  |
+//| InpAllowMCP. Naked MCP fires refused while InpMCPMaxRiskUSD > 0;  |
+//| computed risk must fit the cap. Every command is journaled and   |
+//| shown on the panel.                                              |
 //+------------------------------------------------------------------+
 void WriteMCPAck(string status, string nonce, string detail)
 {
@@ -1706,16 +1743,17 @@ string ExecuteMCPCommand(string cmdLine, bool &ok)
       return StringFormat("stripes=%d", v);
    }
    if(cmd == "BUY_BARCODE")
-   {
-      ExecuteBarcode(ORDER_TYPE_BUY);
-      ok = true;
-      return StringFormat("fired %d stripes x %.2f", g_currentStripes, g_currentLot);
-   }
+      return MCPFireBarcode(ORDER_TYPE_BUY, parts, c, ok);
    if(cmd == "SELL_BARCODE")
+      return MCPFireBarcode(ORDER_TYPE_SELL, parts, c, ok);
+   if(cmd == "BUY_LIMIT" || cmd == "SELL_LIMIT" || cmd == "STRADDLE")
    {
-      ExecuteBarcode(ORDER_TYPE_SELL);
-      ok = true;
-      return StringFormat("fired %d stripes x %.2f", g_currentStripes, g_currentLot);
+      for(int i = 1; i < c; i++)
+      {
+         string a = parts[i]; StringToUpper(a);
+         if(StringFind(a, "SL=") == 0 || StringFind(a, "TP=") == 0)
+            return "SL=/TP= supported on BUY_BARCODE/SELL_BARCODE only";
+      }
    }
    if(cmd == "BUY_LIMIT")
    {
@@ -1744,4 +1782,94 @@ string ExecuteMCPCommand(string cmdLine, bool &ok)
       return StringFormat("flattened %d positions %d orders", p, o);
    }
    return "UNKNOWN_COMMAND " + parts[0];
+}
+
+// Absolute-price SL/TP must sit on the correct side with broker stops-level clearance.
+// Zero values mean "unset" and skip that side's checks.
+bool MCPProtectionValid(double bid, double ask, double sl, double tp, ENUM_ORDER_TYPE type, string &reason)
+{
+   reason = "";
+   double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   if(point <= 0.0) point = 0.01;
+   double stopMin = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * point;
+   if(type == ORDER_TYPE_BUY)
+   {
+      if(sl > 0.0)
+      {
+         if(!(sl < bid)) { reason = "BUY needs SL below bid"; return false; }
+         if(bid - sl < stopMin) { reason = "SL inside stops level"; return false; }
+      }
+      if(tp > 0.0)
+      {
+         if(!(tp > ask)) { reason = "BUY needs TP above ask"; return false; }
+         if(tp - ask < stopMin) { reason = "TP inside stops level"; return false; }
+      }
+   }
+   else
+   {
+      if(sl > 0.0)
+      {
+         if(!(sl > ask)) { reason = "SELL needs SL above ask"; return false; }
+         if(sl - ask < stopMin) { reason = "SL inside stops level"; return false; }
+      }
+      if(tp > 0.0)
+      {
+         if(!(tp < bid)) { reason = "SELL needs TP below bid"; return false; }
+         if(bid - tp < stopMin) { reason = "TP inside stops level"; return false; }
+      }
+   }
+   return true;
+}
+
+// MCP barcode fire with optional atomic SL=/TP= (absolute prices).
+// Enforces the EA-side dollar risk cap: when InpMCPMaxRiskUSD > 0, naked MCP
+// fires are refused and computed worst-case risk must fit the cap.
+string MCPFireBarcode(ENUM_ORDER_TYPE type, string &parts[], int count, bool &ok)
+{
+   ok = false;
+   double sl = 0.0, tp = 0.0;
+   for(int i = 1; i < count; i++)
+   {
+      string a = parts[i];
+      int eq = StringFind(a, "=");
+      if(eq <= 0) return "bad arg '" + a + "' (use SL=<price> TP=<price>)";
+      string k = StringSubstr(a, 0, eq); StringToUpper(k);
+      double v = StringToDouble(StringSubstr(a, eq + 1));
+      if(k == "SL") sl = v;
+      else if(k == "TP") tp = v;
+      else return "unknown arg '" + k + "' (use SL=<price> TP=<price>)";
+   }
+   if(sl < 0.0 || tp < 0.0) return "SL/TP must be positive prices";
+
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   string reason = "";
+   if(!MCPProtectionValid(bid, ask, sl, tp, type, reason))
+      return "invalid protection: " + reason;
+
+   int stripes = (g_currentStripes > 0) ? g_currentStripes : InpNumberOfStripes;
+   double lot = g_currentLot;
+   double risk = 0.0;
+   if(sl > 0.0)
+   {
+      double entry = (type == ORDER_TYPE_BUY) ? ask : bid;
+      double contract = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_CONTRACT_SIZE);
+      if(contract <= 0.0) contract = 100.0;
+      risk = stripes * lot * MathAbs(entry - sl) * contract;
+   }
+   if(InpMCPMaxRiskUSD > 0.0)
+   {
+      if(sl <= 0.0)
+         return StringFormat("naked MCP fire refused: EA risk cap $%.2f requires SL=", InpMCPMaxRiskUSD);
+      if(risk > InpMCPMaxRiskUSD)
+         return StringFormat("risk $%.2f exceeds EA cap $%.2f (cut stripes/lot or tighten SL)", risk, InpMCPMaxRiskUSD);
+   }
+
+   g_mcpSL = sl; g_mcpTP = tp; g_mcpArmedRun = true;
+   ExecuteBarcode(type);
+   ok = true;
+   if(sl > 0.0)
+      return StringFormat("fired %d stripes x %.2f SL=%.2f TP=%.2f risk~$%.2f",
+                          stripes, lot, sl, tp, risk);
+   return StringFormat("fired %d stripes x %.2f NO PROTECTION (EA cap disabled)", stripes, lot);
 }
