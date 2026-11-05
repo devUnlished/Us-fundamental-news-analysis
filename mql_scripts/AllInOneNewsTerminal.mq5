@@ -20,7 +20,7 @@ input double   InpFallbackSpikeDist = 18.0;    // Fallback Limit Offset in Gold 
 input double   InpFallbackTPDist    = 55.0;    // Fallback Take Profit in Gold $ ($55.00 = 550 pips)
 
 input group "=== STRADDLE BREAKOUT BARCODE (G KEY) ===";
-input double   InpStopDistance      = 100.0;   // Breakout Distance in Gold $ ($100.00 above Ask & below Bid)
+input double   InpStopDistance      = 12.71;   // Breakout Distance in Gold $ ($12.71 = 127.1 pips)
 input double   InpStopTPDistance    = 55.0;    // Take Profit in Gold $ ($55.00 = 550 pips)
 input double   InpStopSLDistance    = 0.0;     // Stop Loss in Gold $ (0 for none)
 input int      InpStopExpiryMins    = 15;      // Auto-disarm watch after N minutes (0 for no timeout)
@@ -267,7 +267,7 @@ void DrawHUD()
    CreateButton("BTN_LLIMIT", lTxt, startX + btnW + gapX, r4_y, btnW, r4_h, C'127,29,29', C'248,113,113', fsBtn, C'185,28,28');
 
    // Row 5: Straddle Stops (G key)
-   string straddleTxt = StringFormat("STRADDLE BREAKOUT BARCODE [G] (±$%.0f)", InpStopDistance);
+   string straddleTxt = StringFormat("STRADDLE BREAKOUT BARCODE [G] (±$%.2f)", InpStopDistance);
    CreateButton("BTN_STRADDLE", straddleTxt, startX, r5_y, totalW, r5_h, C'66,50,15', C'250,204,21', fsBtn, C'161,98,7');
 
    // Row 6: Panic Close Kill Switch
@@ -594,14 +594,14 @@ void UpdateHUDStatus()
    // Straddle Breakout Watch Button Appearance
    if(g_straddleArmed)
    {
-      ObjectSetString(0, "BTN_STRADDLE", OBJPROP_TEXT, StringFormat("⚡ ARMED: BREAKOUT WATCH [G] (±$%.0f)", InpStopDistance));
+      ObjectSetString(0, "BTN_STRADDLE", OBJPROP_TEXT, StringFormat("⚡ ARMED: BREAKOUT WATCH [G] (±$%.2f)", InpStopDistance));
       ObjectSetInteger(0, "BTN_STRADDLE", OBJPROP_BGCOLOR, C'202,138,4'); // Vibrant Gold Amber
       ObjectSetInteger(0, "BTN_STRADDLE", OBJPROP_COLOR, clrWhite);
       ObjectSetInteger(0, "BTN_STRADDLE", OBJPROP_BORDER_COLOR, C'250,204,21'); // Bright yellow border
    }
    else
    {
-      ObjectSetString(0, "BTN_STRADDLE", OBJPROP_TEXT, StringFormat("STRADDLE BREAKOUT BARCODE [G] (±$%.0f)", InpStopDistance));
+      ObjectSetString(0, "BTN_STRADDLE", OBJPROP_TEXT, StringFormat("STRADDLE BREAKOUT BARCODE [G] (±$%.2f)", InpStopDistance));
       ObjectSetInteger(0, "BTN_STRADDLE", OBJPROP_BGCOLOR, C'66,50,15'); // Dark Bronze
       ObjectSetInteger(0, "BTN_STRADDLE", OBJPROP_COLOR, C'250,204,21');
       ObjectSetInteger(0, "BTN_STRADDLE", OBJPROP_BORDER_COLOR, C'161,98,7');
@@ -1278,7 +1278,7 @@ void DrawStraddleLines(double buyTrig, double buyTP, double sellTrig, double sel
    ObjectSetInteger(0, "LINE_STRADDLE_BUY", OBJPROP_COLOR, clrLime);
    ObjectSetInteger(0, "LINE_STRADDLE_BUY", OBJPROP_STYLE, STYLE_SOLID);
    ObjectSetInteger(0, "LINE_STRADDLE_BUY", OBJPROP_WIDTH, 2);
-   ObjectSetString(0, "LINE_STRADDLE_BUY", OBJPROP_TEXT, "BUY STOP (+$100)");
+   ObjectSetString(0, "LINE_STRADDLE_BUY", OBJPROP_TEXT, StringFormat("BUY STOP (+$%.2f)", InpStopDistance));
 
    // 2. BUY STOP TAKE PROFIT LINE (Mint Green, Dashed, Width 2)
    ObjectDelete(0, "LINE_STRADDLE_BUY_TP");
@@ -1286,7 +1286,7 @@ void DrawStraddleLines(double buyTrig, double buyTP, double sellTrig, double sel
    ObjectSetInteger(0, "LINE_STRADDLE_BUY_TP", OBJPROP_COLOR, C'52,211,153');
    ObjectSetInteger(0, "LINE_STRADDLE_BUY_TP", OBJPROP_STYLE, STYLE_DASH);
    ObjectSetInteger(0, "LINE_STRADDLE_BUY_TP", OBJPROP_WIDTH, 2);
-   ObjectSetString(0, "LINE_STRADDLE_BUY_TP", OBJPROP_TEXT, "BUY TP (+$55)");
+   ObjectSetString(0, "LINE_STRADDLE_BUY_TP", OBJPROP_TEXT, StringFormat("BUY TP (+$%.0f)", g_activeTPDist));
 
    // 3. SELL STOP TRIGGER LINE (Neon Red, Solid, Width 2)
    ObjectDelete(0, "LINE_STRADDLE_SELL");
@@ -1294,7 +1294,7 @@ void DrawStraddleLines(double buyTrig, double buyTP, double sellTrig, double sel
    ObjectSetInteger(0, "LINE_STRADDLE_SELL", OBJPROP_COLOR, clrRed);
    ObjectSetInteger(0, "LINE_STRADDLE_SELL", OBJPROP_STYLE, STYLE_SOLID);
    ObjectSetInteger(0, "LINE_STRADDLE_SELL", OBJPROP_WIDTH, 2);
-   ObjectSetString(0, "LINE_STRADDLE_SELL", OBJPROP_TEXT, "SELL STOP (-$100)");
+   ObjectSetString(0, "LINE_STRADDLE_SELL", OBJPROP_TEXT, StringFormat("SELL STOP (-$%.2f)", InpStopDistance));
 
    // 4. SELL STOP TAKE PROFIT LINE (Coral Red, Dashed, Width 2)
    ObjectDelete(0, "LINE_STRADDLE_SELL_TP");
@@ -1302,12 +1302,7 @@ void DrawStraddleLines(double buyTrig, double buyTP, double sellTrig, double sel
    ObjectSetInteger(0, "LINE_STRADDLE_SELL_TP", OBJPROP_COLOR, C'248,113,113');
    ObjectSetInteger(0, "LINE_STRADDLE_SELL_TP", OBJPROP_STYLE, STYLE_DASH);
    ObjectSetInteger(0, "LINE_STRADDLE_SELL_TP", OBJPROP_WIDTH, 2);
-   ObjectSetString(0, "LINE_STRADDLE_SELL_TP", OBJPROP_TEXT, "SELL TP (-$55)");
-
-   // Auto-scale chart vertical price ruler so all 4 lines are clearly visible on screen!
-   ChartSetInteger(0, CHART_SCALEFIX, true);
-   ChartSetDouble(0, CHART_FIXED_MAX, buyTP + 5.0);
-   ChartSetDouble(0, CHART_FIXED_MIN, sellTP - 5.0);
+   ObjectSetString(0, "LINE_STRADDLE_SELL_TP", OBJPROP_TEXT, StringFormat("SELL TP (-$%.0f)", g_activeTPDist));
 
    ChartRedraw(0);
 }
@@ -1382,8 +1377,8 @@ void CheckStraddleBreakout()
    {
       double triggerLvl = g_straddleBuyTrigger;
       DisarmStraddleWatch(); // Immediately disarm to prevent duplicate firing
-      PrintFormat("🚀🚀 [BREAKOUT BUY TRIGGERED]: Ask %.2f crossed trigger %.2f (+$%.0f)! Firing %d barcode stripes at %.2f lots with TP +$%.0f...",
-                  ask, triggerLvl, InpStopDistance, g_currentStripes, g_currentLot, g_activeTPDist);
+      PrintFormat("🚀🚀 [BREAKOUT BUY TRIGGERED]: Ask %.2f crossed trigger %.2f (+$%.2f / %.1fp)! Firing %d barcode stripes at %.2f lots with TP +$%.0f...",
+                  ask, triggerLvl, InpStopDistance, InpStopDistance * 10.0, g_currentStripes, g_currentLot, g_activeTPDist);
       ExecuteBarcode(ORDER_TYPE_BUY);
       return;
    }
@@ -1393,8 +1388,8 @@ void CheckStraddleBreakout()
    {
       double triggerLvl = g_straddleSellTrigger;
       DisarmStraddleWatch(); // Immediately disarm to prevent duplicate firing
-      PrintFormat("🚀🚀 [BREAKOUT SELL TRIGGERED]: Bid %.2f crossed trigger %.2f (-$%.0f)! Firing %d barcode stripes at %.2f lots with TP +$%.0f...",
-                  bid, triggerLvl, InpStopDistance, g_currentStripes, g_currentLot, g_activeTPDist);
+      PrintFormat("🚀🚀 [BREAKOUT SELL TRIGGERED]: Bid %.2f crossed trigger %.2f (-$%.2f / %.1fp)! Firing %d barcode stripes at %.2f lots with TP +$%.0f...",
+                  bid, triggerLvl, InpStopDistance, InpStopDistance * 10.0, g_currentStripes, g_currentLot, g_activeTPDist);
       ExecuteBarcode(ORDER_TYPE_SELL);
       return;
    }
