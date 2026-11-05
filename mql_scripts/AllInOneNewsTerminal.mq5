@@ -6,7 +6,7 @@
 //+------------------------------------------------------------------+
 #property copyright "News Sniper Terminal"
 #property link      "https://github.com/devUnlished/Us-fundamental-news-analysis"
-#property version   "5.00"
+#property version   "5.10"
 
 #include <Trade\Trade.mqh>
 
@@ -49,6 +49,9 @@ input double   InpUIScale           = 1.0;     // UI Scale Multiplier (1.0 = Sta
 input int      InpStartX            = 20;      // Panel X Position on Chart
 input int      InpStartY            = 30;      // Panel Y Position on Chart
 
+input group "=== MCP COMMAND LINK ===";
+input bool     InpAllowMCP          = false;   // Allow external MCP agent commands via command file (OFF = manual only)
+
 CTrade trade;
 double g_currentLot = 0.05;
 int    g_currentStripes = 10;
@@ -80,6 +83,15 @@ int             g_barcodeBaseOpenCount = 0;
 datetime        g_barcodeStartTime = 0;
 datetime        g_barcodeLastFireTime = 0;
 
+// MCP command-link state (lets the external agent call the same functions as the panel buttons)
+#define MCP_CMD_FILE "mcp_cmd.txt"
+#define MCP_ACK_FILE "mcp_ack.txt"
+#define MCP_CMD_MAX_AGE_SEC 60
+string   g_mcpLastNonce = "";
+string   g_mcpLastCmd = "none";
+string   g_mcpLastResult = "";
+datetime g_mcpLastCmdTime = 0;
+
 int  GetBarcodePositionsCount(ENUM_POSITION_TYPE targetPosType = WRONG_VALUE);
 void ExecuteBarcode(ENUM_ORDER_TYPE orderType, double customLot = 0.0);
 void StartBarcodeEngine(ENUM_ORDER_TYPE orderType, int targetStripes, double lot);
@@ -94,6 +106,9 @@ void CheckStraddleBreakout();
 bool CanAffordBarcode(ENUM_ORDER_TYPE orderType, double &outLotPerStripe);
 double GetPipSize();
 ENUM_ORDER_TYPE_FILLING GetFillingMode();
+void PollMCPCommand();
+void WriteMCPAck(string status, string nonce, string detail);
+string ExecuteMCPCommand(string cmdLine, bool &ok);
 
 void CreateButton(string name, string text, int x, int y, int w, int h, color bg, color fg, int fontSize = 10, color border = clrNONE)
 {
@@ -173,7 +188,8 @@ void DrawHUD()
    int r6_h   = (int)(46 * scale);
 
    int r7_y   = r6_y + r6_h + (int)(18 * scale);
-   int totalH = (r7_y - startY) + (int)(22 * scale) + pad;
+   int r8_y   = r7_y + (int)(20 * scale);
+   int totalH = (r8_y - startY) + (int)(22 * scale) + pad;
 
    // Purge legacy elements
    ObjectDelete(0, "BTN_TEST_BUY");
@@ -282,6 +298,16 @@ void DrawHUD()
    ObjectSetString(0, "LBL_STATUS", OBJPROP_FONT, "Segoe UI");
    ObjectSetInteger(0, "LBL_STATUS", OBJPROP_FONTSIZE, fsStatus);
    ObjectSetInteger(0, "LBL_STATUS", OBJPROP_COLOR, C'148,163,184');
+
+   // Row 8: MCP command-link status (external agent visibility)
+   ObjectDelete(0, "LBL_MCP");
+   ObjectCreate(0, "LBL_MCP", OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, "LBL_MCP", OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, "LBL_MCP", OBJPROP_XDISTANCE, startX);
+   ObjectSetInteger(0, "LBL_MCP", OBJPROP_YDISTANCE, r8_y);
+   ObjectSetString(0, "LBL_MCP", OBJPROP_FONT, "Segoe UI");
+   ObjectSetInteger(0, "LBL_MCP", OBJPROP_FONTSIZE, fsStatus);
+   ObjectSetInteger(0, "LBL_MCP", OBJPROP_COLOR, C'100,116,139');
 }
 
 // Inspect live calendar & calibrate Wick Limit + Take Profit dynamically
@@ -661,6 +687,23 @@ void UpdateHUDStatus()
    ObjectSetInteger(0, "BTN_STRIPES_100", OBJPROP_COLOR,   (g_currentStripes == 100) ? activeFg : inactiveFg);
    ObjectSetInteger(0, "BTN_STRIPES_100", OBJPROP_BORDER_COLOR, (g_currentStripes == 100) ? activeBorder : inactiveBorder);
 
+   // MCP command-link status line: always visible so the human sees agent activity
+   if(!InpAllowMCP)
+   {
+      ObjectSetString(0, "LBL_MCP", OBJPROP_TEXT, "MCP LINK: OFF (manual only)");
+      ObjectSetInteger(0, "LBL_MCP", OBJPROP_COLOR, C'100,116,139');
+   }
+   else if(g_mcpLastCmdTime > 0 && TimeCurrent() - g_mcpLastCmdTime < 300)
+   {
+      ObjectSetString(0, "LBL_MCP", OBJPROP_TEXT, StringFormat("MCP: %s -> %s", g_mcpLastCmd, g_mcpLastResult));
+      ObjectSetInteger(0, "LBL_MCP", OBJPROP_COLOR, C'52,211,153');
+   }
+   else
+   {
+      ObjectSetString(0, "LBL_MCP", OBJPROP_TEXT, "MCP LINK: ARMED | last: none");
+      ObjectSetInteger(0, "LBL_MCP", OBJPROP_COLOR, C'52,211,153');
+   }
+
    ChartRedraw(0);
 }
 
@@ -676,7 +719,9 @@ int OnInit()
    DrawHUD();
    UpdateHUDStatus();
    EventSetMillisecondTimer(50); // Superfast 50ms reaction cycle
-   PrintFormat(">>> NEWS TERMINAL 5.00 ACTIVE: Calibrated Wick Limits & Dynamic TP ($%.0f) Running! <<<", g_activeTPDist);
+   FileDelete(MCP_CMD_FILE); // Never execute a leftover command from a previous session
+   FileDelete(MCP_ACK_FILE);
+   PrintFormat(">>> NEWS TERMINAL 5.10 ACTIVE: Calibrated Wick Limits & Dynamic TP ($%.0f) Running! MCP link: %s <<<", g_activeTPDist, InpAllowMCP ? "ARMED" : "OFF");
 
    // Retain armed stops across timeframe switches!
    string gvPrefix = StringFormat("AION_%s_", _Symbol);
@@ -732,6 +777,7 @@ void OnDeinit(const int reason)
    ObjectDelete(0, "BTN_STRADDLE");
    ObjectDelete(0, "BTN_CLOSE");
    ObjectDelete(0, "LBL_STATUS");
+   ObjectDelete(0, "LBL_MCP");
 
    if(reason != REASON_CHARTCHANGE && reason != REASON_PARAMETERS)
    {
@@ -754,6 +800,7 @@ void OnTimer()
 {
    CheckStraddleBreakout();
    ProcessBarcodeEngine();
+   PollMCPCommand();
    UpdateHUDStatus();
 }
 
@@ -1393,4 +1440,202 @@ void CheckStraddleBreakout()
       ExecuteBarcode(ORDER_TYPE_SELL);
       return;
    }
+}
+
+//+------------------------------------------------------------------+
+//| MCP COMMAND LINK                                                 |
+//| File-based command queue so the external MCP agent calls the     |
+//| exact same functions as the panel buttons and hotkeys.           |
+//|                                                                  |
+//| Protocol (MQL5/Files):                                           |
+//|   mcp_cmd.txt line 1: COMMAND [args...]                          |
+//|   mcp_cmd.txt line 2: TS=<TimeGMT seconds> NONCE=<unique token>   |
+//|   mcp_ack.txt: STATUS NONCE detail...  (STATUS = OK or ERR)       |
+//|                                                                  |
+//| Safety: single-use file (deleted on read), 60s freshness window, |
+//| nonce replay guard, whitelisted commands only, gated behind      |
+//| InpAllowMCP. Every command is journaled and shown on the panel.  |
+//+------------------------------------------------------------------+
+void WriteMCPAck(string status, string nonce, string detail)
+{
+   int h = FileOpen(MCP_ACK_FILE, FILE_WRITE|FILE_TXT|FILE_ANSI);
+   if(h == INVALID_HANDLE) return;
+   FileWriteString(h, StringFormat("%s %s %s\n", status, nonce, detail));
+   FileClose(h);
+}
+
+void PollMCPCommand()
+{
+   // Throttle: ~5 checks/sec on the 50ms timer is plenty for an agent link
+   static int tick = 0;
+   if((tick++ % 4) != 0) return;
+
+   string found = "";
+   long search = FileFindFirst(MCP_CMD_FILE, found);
+   if(search == INVALID_HANDLE) return;
+   FileFindClose(search);
+
+   int h = FileOpen(MCP_CMD_FILE, FILE_READ|FILE_TXT|FILE_ANSI);
+   if(h == INVALID_HANDLE) return;
+   string cmdLine = "";
+   string metaLine = "";
+   if(!FileIsEnding(h)) cmdLine = FileReadString(h);
+   if(!FileIsEnding(h)) metaLine = FileReadString(h);
+   FileClose(h);
+   StringTrimRight(cmdLine); StringTrimLeft(cmdLine);
+   StringTrimRight(metaLine); StringTrimLeft(metaLine);
+
+   // Parse "TS=<n> NONCE=<token>"
+   long ts = 0;
+   string nonce = "";
+   string meta[];
+   int m = StringSplit(metaLine, ' ', meta);
+   for(int i = 0; i < m; i++)
+   {
+      if(StringFind(meta[i], "TS=") == 0)
+         ts = StringToInteger(StringSubstr(meta[i], 3));
+      else if(StringFind(meta[i], "NONCE=") == 0)
+         nonce = StringSubstr(meta[i], 6);
+   }
+
+   // Single-use: consume immediately so nothing can execute twice
+   FileDelete(MCP_CMD_FILE);
+
+   if(cmdLine == "" || nonce == "")
+   {
+      WriteMCPAck("ERR", nonce, "MALFORMED expected 'COMMAND [args]' + 'TS=<n> NONCE=<t>'");
+      return;
+   }
+   if(nonce == g_mcpLastNonce)
+   {
+      WriteMCPAck("ERR", nonce, "DUPLICATE nonce already executed");
+      return;
+   }
+   if(MathAbs((long)TimeGMT() - ts) > MCP_CMD_MAX_AGE_SEC)
+   {
+      WriteMCPAck("ERR", nonce, "STALE command older than 60s");
+      return;
+   }
+   if(!InpAllowMCP)
+   {
+      WriteMCPAck("ERR", nonce, "DISABLED set InpAllowMCP=true to arm the link");
+      PrintFormat("MCP CMD REJECTED (link off): %s", cmdLine);
+      return;
+   }
+
+   g_mcpLastNonce = nonce;
+   bool ok = false;
+   string detail = ExecuteMCPCommand(cmdLine, ok);
+   string word = cmdLine;
+   int sp = StringFind(cmdLine, " ");
+   if(sp > 0) word = StringSubstr(cmdLine, 0, sp);
+   StringToUpper(word);
+   g_mcpLastCmd = word;
+   g_mcpLastResult = StringSubstr((ok ? "OK " : "ERR ") + detail, 0, 72);
+   g_mcpLastCmdTime = TimeCurrent();
+   WriteMCPAck(ok ? "OK" : "ERR", nonce, detail);
+   PrintFormat("MCP CMD %s: %s -> %s", ok ? "OK" : "ERR", cmdLine, detail);
+   UpdateHUDStatus();
+}
+
+string ExecuteMCPCommand(string cmdLine, bool &ok)
+{
+   ok = false;
+   string raw[];
+   int n = StringSplit(cmdLine, ' ', raw);
+   string parts[];
+   ArrayResize(parts, n);
+   int c = 0;
+   for(int i = 0; i < n; i++)
+   {
+      string t = raw[i];
+      StringTrimRight(t); StringTrimLeft(t);
+      if(t != "") { parts[c] = t; c++; }
+   }
+   if(c == 0) return "EMPTY command";
+   ArrayResize(parts, c);
+   string cmd = parts[0];
+   StringToUpper(cmd);
+
+   if(cmd == "PING")
+   {
+      ok = true;
+      return StringFormat("EA alive | equity $%.2f | positions %d | orders %d | straddle %s",
+                          AccountInfoDouble(ACCOUNT_EQUITY), PositionsTotal(), OrdersTotal(),
+                          g_straddleArmed ? "ARMED" : "OFF");
+   }
+   if(cmd == "STATUS")
+   {
+      ok = true;
+      return StringFormat("lot=%.2f stripes=%d spike=$%.0f tp=+$%.0f barcode=%s straddle=%s autopilot=%s",
+                          g_currentLot, g_currentStripes, g_activeSpikeOffset, g_activeTPDist,
+                          g_barcodeActive ? "ACTIVE" : "IDLE", g_straddleArmed ? "ARMED" : "OFF",
+                          InpEnableAutoPilot ? "ON" : "OFF");
+   }
+   if(cmd == "SET_LOT")
+   {
+      if(c < 2) return "SET_LOT needs a value, e.g. SET_LOT 0.10";
+      double v = NormalizeDouble(StringToDouble(parts[1]), 2);
+      double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+      double maxLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+      double step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+      if(minLot <= 0) minLot = 0.01;
+      if(maxLot <= 0) maxLot = 50.0;
+      if(step <= 0) step = 0.01;
+      if(v < minLot || v > maxLot) return StringFormat("lot %.2f outside broker range %.2f-%.2f", v, minLot, maxLot);
+      v = MathFloor(v / step + 0.5) * step;
+      v = NormalizeDouble(v, 2);
+      g_currentLot = v;
+      ObjectSetString(0, "EDT_LOT_SIZE", OBJPROP_TEXT, DoubleToString(v, 2));
+      ok = true;
+      return StringFormat("lot=%.2f", v);
+   }
+   if(cmd == "SET_STRIPES")
+   {
+      if(c < 2) return "SET_STRIPES needs a value, e.g. SET_STRIPES 20";
+      int v = (int)StringToInteger(parts[1]);
+      if(v < 1 || v > 100) return "stripes must be 1-100";
+      g_currentStripes = v;
+      ok = true;
+      return StringFormat("stripes=%d", v);
+   }
+   if(cmd == "BUY_BARCODE")
+   {
+      ExecuteBarcode(ORDER_TYPE_BUY);
+      ok = true;
+      return StringFormat("fired %d stripes x %.2f", g_currentStripes, g_currentLot);
+   }
+   if(cmd == "SELL_BARCODE")
+   {
+      ExecuteBarcode(ORDER_TYPE_SELL);
+      ok = true;
+      return StringFormat("fired %d stripes x %.2f", g_currentStripes, g_currentLot);
+   }
+   if(cmd == "BUY_LIMIT")
+   {
+      ArmSpikeLimits(ORDER_TYPE_BUY_LIMIT);
+      ok = true;
+      return StringFormat("buy limits armed | wick $%.0f", g_activeSpikeOffset);
+   }
+   if(cmd == "SELL_LIMIT")
+   {
+      ArmSpikeLimits(ORDER_TYPE_SELL_LIMIT);
+      ok = true;
+      return StringFormat("sell limits armed | wick $%.0f", g_activeSpikeOffset);
+   }
+   if(cmd == "STRADDLE")
+   {
+      ExecuteStraddleStops();
+      ok = true;
+      return g_straddleArmed ? StringFormat("watch ARMED (+-$%.0f)", InpStopDistance) : "watch DISARMED";
+   }
+   if(cmd == "PANIC_CLOSE")
+   {
+      int p = PositionsTotal();
+      int o = OrdersTotal();
+      ExecuteEmergencyClose();
+      ok = true;
+      return StringFormat("flattened %d positions %d orders", p, o);
+   }
+   return "UNKNOWN_COMMAND " + parts[0];
 }
