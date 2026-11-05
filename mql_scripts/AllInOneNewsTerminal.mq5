@@ -89,6 +89,7 @@ void ExecuteStraddleStops();
 void ToggleStraddleWatch();
 void ArmStraddleWatch();
 void DisarmStraddleWatch();
+void DrawStraddleLines(double buyTrig, double buyTP, double sellTrig, double sellTP);
 void CheckStraddleBreakout();
 bool CanAffordBarcode(ENUM_ORDER_TYPE orderType, double &outLotPerStripe);
 double GetPipSize();
@@ -676,13 +677,37 @@ int OnInit()
    UpdateHUDStatus();
    EventSetMillisecondTimer(50); // Superfast 50ms reaction cycle
    PrintFormat(">>> NEWS TERMINAL 5.00 ACTIVE: Calibrated Wick Limits & Dynamic TP ($%.0f) Running! <<<", g_activeTPDist);
+
+   // Retain armed stops across timeframe switches!
+   string gvPrefix = StringFormat("AION_%s_", _Symbol);
+   if(GlobalVariableCheck(gvPrefix + "ARMED") && GlobalVariableGet(gvPrefix + "ARMED") > 0.5)
+   {
+      g_straddleArmed       = true;
+      g_straddleBuyTrigger  = GlobalVariableGet(gvPrefix + "BUY_TRIG");
+      g_straddleSellTrigger = GlobalVariableGet(gvPrefix + "SELL_TRIG");
+      g_straddleArmTime     = (datetime)GlobalVariableGet(gvPrefix + "ARM_TIME");
+      double buyTP          = GlobalVariableGet(gvPrefix + "BUY_TP");
+      double sellTP         = GlobalVariableGet(gvPrefix + "SELL_TP");
+
+      DrawStraddleLines(g_straddleBuyTrigger, buyTP, g_straddleSellTrigger, sellTP);
+      UpdateHUDStatus();
+      PrintFormat("🔄 [TIMEFRAME SWITCH]: Retained active Breakout Stops on %s! Buy: %.2f | Sell: %.2f",
+                  _Symbol, g_straddleBuyTrigger, g_straddleSellTrigger);
+   }
+
    return(INIT_SUCCEEDED);
 }
 
 void OnDeinit(const int reason)
 {
    EventKillTimer();
-   DisarmStraddleWatch();
+
+   // Only disarm if actually removing EA or terminal closing - NEVER on timeframe switch!
+   if(reason != REASON_CHARTCHANGE && reason != REASON_PARAMETERS)
+   {
+      DisarmStraddleWatch();
+   }
+
    ObjectDelete(0, "BOX_MAIN_BG");
    ObjectDelete(0, "BOX_AUTOBOT_BG");
    ObjectDelete(0, "LBL_AUTOBOT_BADGE");
@@ -707,10 +732,15 @@ void OnDeinit(const int reason)
    ObjectDelete(0, "BTN_STRADDLE");
    ObjectDelete(0, "BTN_CLOSE");
    ObjectDelete(0, "LBL_STATUS");
-   ObjectDelete(0, "LINE_STRADDLE_BUY");
-   ObjectDelete(0, "LINE_STRADDLE_BUY_TP");
-   ObjectDelete(0, "LINE_STRADDLE_SELL");
-   ObjectDelete(0, "LINE_STRADDLE_SELL_TP");
+
+   if(reason != REASON_CHARTCHANGE && reason != REASON_PARAMETERS)
+   {
+      ObjectDelete(0, "LINE_STRADDLE_BUY");
+      ObjectDelete(0, "LINE_STRADDLE_BUY_TP");
+      ObjectDelete(0, "LINE_STRADDLE_SELL");
+      ObjectDelete(0, "LINE_STRADDLE_SELL_TP");
+      ChartSetInteger(0, CHART_SCALEFIX, false);
+   }
    ChartRedraw(0);
 }
 
@@ -1222,59 +1252,91 @@ void ArmStraddleWatch()
    g_straddleArmed = true;
    g_straddleArmTime = TimeCurrent();
 
-   // Enable on-chart descriptions so labels appear next to the lines
+   // Persist armed state in Terminal Global Variables so timeframe changes NEVER wipe out armed stops!
+   string gvPrefix = StringFormat("AION_%s_", _Symbol);
+   GlobalVariableSet(gvPrefix + "ARMED", 1.0);
+   GlobalVariableSet(gvPrefix + "BUY_TRIG", g_straddleBuyTrigger);
+   GlobalVariableSet(gvPrefix + "SELL_TRIG", g_straddleSellTrigger);
+   GlobalVariableSet(gvPrefix + "BUY_TP", buyTP);
+   GlobalVariableSet(gvPrefix + "SELL_TP", sellTP);
+   GlobalVariableSet(gvPrefix + "ARM_TIME", (double)g_straddleArmTime);
+
+   DrawStraddleLines(g_straddleBuyTrigger, buyTP, g_straddleSellTrigger, sellTP);
+   UpdateHUDStatus();
+
+   PrintFormat("⚡ [BREAKOUT WATCH ARMED [G]]: %s | Buy Stop: %.2f (TP: %.2f) | Sell Stop: %.2f (TP: %.2f) | Barcode: %dx %.2f",
+               _Symbol, g_straddleBuyTrigger, buyTP, g_straddleSellTrigger, sellTP, g_currentStripes, g_currentLot);
+}
+
+void DrawStraddleLines(double buyTrig, double buyTP, double sellTrig, double sellTP)
+{
    ChartSetInteger(0, CHART_SHOW_OBJECT_DESCR, true);
 
-   // 1. BUY STOP TRIGGER LINE (Vibrant Lime Green)
+   // 1. BUY STOP TRIGGER LINE (Lime Green, Solid, Width 2)
    ObjectDelete(0, "LINE_STRADDLE_BUY");
-   ObjectCreate(0, "LINE_STRADDLE_BUY", OBJ_HLINE, 0, 0, g_straddleBuyTrigger);
+   ObjectCreate(0, "LINE_STRADDLE_BUY", OBJ_HLINE, 0, 0, buyTrig);
    ObjectSetInteger(0, "LINE_STRADDLE_BUY", OBJPROP_COLOR, clrLime);
    ObjectSetInteger(0, "LINE_STRADDLE_BUY", OBJPROP_STYLE, STYLE_SOLID);
    ObjectSetInteger(0, "LINE_STRADDLE_BUY", OBJPROP_WIDTH, 2);
-   ObjectSetString(0, "LINE_STRADDLE_BUY", OBJPROP_TEXT, StringFormat("⚡ BUY STOP TRIGGER (G): %.2f (+$%.0f)", g_straddleBuyTrigger, InpStopDistance));
+   ObjectSetString(0, "LINE_STRADDLE_BUY", OBJPROP_TEXT, "BUY STOP (+$100)");
 
-   // 2. BUY STOP TAKE PROFIT LINE (Bright Mint Green)
+   // 2. BUY STOP TAKE PROFIT LINE (Mint Green, Dashed, Width 2)
    ObjectDelete(0, "LINE_STRADDLE_BUY_TP");
    ObjectCreate(0, "LINE_STRADDLE_BUY_TP", OBJ_HLINE, 0, 0, buyTP);
    ObjectSetInteger(0, "LINE_STRADDLE_BUY_TP", OBJPROP_COLOR, C'52,211,153');
    ObjectSetInteger(0, "LINE_STRADDLE_BUY_TP", OBJPROP_STYLE, STYLE_DASH);
    ObjectSetInteger(0, "LINE_STRADDLE_BUY_TP", OBJPROP_WIDTH, 2);
-   ObjectSetString(0, "LINE_STRADDLE_BUY_TP", OBJPROP_TEXT, StringFormat("🎯 BUY TAKE PROFIT: %.2f (+$%.0f TP)", buyTP, g_activeTPDist));
+   ObjectSetString(0, "LINE_STRADDLE_BUY_TP", OBJPROP_TEXT, "BUY TP (+$55)");
 
-   // 3. SELL STOP TRIGGER LINE (Vibrant Neon Red)
+   // 3. SELL STOP TRIGGER LINE (Neon Red, Solid, Width 2)
    ObjectDelete(0, "LINE_STRADDLE_SELL");
-   ObjectCreate(0, "LINE_STRADDLE_SELL", OBJ_HLINE, 0, 0, g_straddleSellTrigger);
+   ObjectCreate(0, "LINE_STRADDLE_SELL", OBJ_HLINE, 0, 0, sellTrig);
    ObjectSetInteger(0, "LINE_STRADDLE_SELL", OBJPROP_COLOR, clrRed);
    ObjectSetInteger(0, "LINE_STRADDLE_SELL", OBJPROP_STYLE, STYLE_SOLID);
    ObjectSetInteger(0, "LINE_STRADDLE_SELL", OBJPROP_WIDTH, 2);
-   ObjectSetString(0, "LINE_STRADDLE_SELL", OBJPROP_TEXT, StringFormat("⚡ SELL STOP TRIGGER (G): %.2f (-$%.0f)", g_straddleSellTrigger, InpStopDistance));
+   ObjectSetString(0, "LINE_STRADDLE_SELL", OBJPROP_TEXT, "SELL STOP (-$100)");
 
-   // 4. SELL STOP TAKE PROFIT LINE (Soft Coral Red)
+   // 4. SELL STOP TAKE PROFIT LINE (Coral Red, Dashed, Width 2)
    ObjectDelete(0, "LINE_STRADDLE_SELL_TP");
    ObjectCreate(0, "LINE_STRADDLE_SELL_TP", OBJ_HLINE, 0, 0, sellTP);
    ObjectSetInteger(0, "LINE_STRADDLE_SELL_TP", OBJPROP_COLOR, C'248,113,113');
    ObjectSetInteger(0, "LINE_STRADDLE_SELL_TP", OBJPROP_STYLE, STYLE_DASH);
    ObjectSetInteger(0, "LINE_STRADDLE_SELL_TP", OBJPROP_WIDTH, 2);
-   ObjectSetString(0, "LINE_STRADDLE_SELL_TP", OBJPROP_TEXT, StringFormat("🎯 SELL TAKE PROFIT: %.2f (-$%.0f TP)", sellTP, g_activeTPDist));
+   ObjectSetString(0, "LINE_STRADDLE_SELL_TP", OBJPROP_TEXT, "SELL TP (-$55)");
 
-   UpdateHUDStatus();
+   // Auto-scale chart vertical price ruler so all 4 lines are clearly visible on screen!
+   ChartSetInteger(0, CHART_SCALEFIX, true);
+   ChartSetDouble(0, CHART_FIXED_MAX, buyTP + 5.0);
+   ChartSetDouble(0, CHART_FIXED_MIN, sellTP - 5.0);
+
    ChartRedraw(0);
-
-   PrintFormat("⚡ [BREAKOUT WATCH ARMED [G]]: Waiting on %s! Buy Trigger: %.2f (TP: %.2f | +$%.0f) | Sell Trigger: %.2f (TP: %.2f | -$%.0f) | Barcode: %dx %.2f",
-               _Symbol, g_straddleBuyTrigger, buyTP, InpStopDistance, g_straddleSellTrigger, sellTP, InpStopDistance, g_currentStripes, g_currentLot);
 }
 
 void DisarmStraddleWatch()
 {
+   string gvPrefix = StringFormat("AION_%s_", _Symbol);
+   GlobalVariableDel(gvPrefix + "ARMED");
+   GlobalVariableDel(gvPrefix + "BUY_TRIG");
+   GlobalVariableDel(gvPrefix + "SELL_TRIG");
+   GlobalVariableDel(gvPrefix + "BUY_TP");
+   GlobalVariableDel(gvPrefix + "SELL_TP");
+   GlobalVariableDel(gvPrefix + "ARM_TIME");
+
    if(!g_straddleArmed && ObjectFind(0, "LINE_STRADDLE_BUY") < 0 && ObjectFind(0, "LINE_STRADDLE_SELL") < 0) return;
+   
    g_straddleArmed = false;
    g_straddleBuyTrigger = 0.0;
    g_straddleSellTrigger = 0.0;
    g_straddleArmTime = 0;
+
    ObjectDelete(0, "LINE_STRADDLE_BUY");
    ObjectDelete(0, "LINE_STRADDLE_BUY_TP");
    ObjectDelete(0, "LINE_STRADDLE_SELL");
    ObjectDelete(0, "LINE_STRADDLE_SELL_TP");
+
+   // Restore natural flexible price scaling
+   ChartSetInteger(0, CHART_SCALEFIX, false);
+
    UpdateHUDStatus();
    ChartRedraw(0);
 }
