@@ -20,7 +20,7 @@ input double   InpFallbackSpikeDist = 18.0;    // Fallback Limit Offset in Gold 
 input double   InpFallbackTPDist    = 75.0;    // Fallback Take Profit in Gold $ ($75.00 = 750 pips)
 
 input group "=== STRADDLE BREAKOUT BARCODE (G KEY) ===";
-input double   InpStopDistance      = 40.0;    // Breakout Distance in Gold $ ($40.00 = 400 pips)
+input double   InpStopDistance      = 10.0;    // Breakout Distance in Gold $ ($10.00 = 100 pips)
 input double   InpStopTPDistance    = 75.0;    // Take Profit in Gold $ ($75.00 = 750 pips)
 input double   InpStopSLDistance    = 0.0;     // Stop Loss in Gold $ (0 for none)
 input int      InpStopExpiryMins    = 15;      // Auto-disarm watch after N minutes (0 for no timeout)
