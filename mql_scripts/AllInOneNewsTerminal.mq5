@@ -6,7 +6,7 @@
 //+------------------------------------------------------------------+
 #property copyright "News Sniper Terminal"
 #property link      "https://github.com/devUnlished/Us-fundamental-news-analysis"
-#property version   "5.20"
+#property version   "5.21"
 
 #include <Trade\Trade.mqh>
 
@@ -732,7 +732,7 @@ int OnInit()
    EventSetMillisecondTimer(50); // Superfast 50ms reaction cycle
    FileDelete(MCP_CMD_FILE); // Never execute a leftover command from a previous session
    FileDelete(MCP_ACK_FILE);
-   PrintFormat(">>> NEWS TERMINAL 5.20 ACTIVE: Calibrated Wick Limits & Dynamic TP ($%.0f) Running! MCP link: %s <<<", g_activeTPDist, InpAllowMCP ? "ARMED" : "OFF");
+   PrintFormat(">>> NEWS TERMINAL 5.21 ACTIVE: Calibrated Wick Limits & Dynamic TP ($%.0f) Running! MCP link: %s <<<", g_activeTPDist, InpAllowMCP ? "ARMED" : "OFF");
 
    // Retain armed stops across timeframe switches!
    string gvPrefix = StringFormat("AION_%s_", _Symbol);
@@ -913,8 +913,10 @@ double GetMarginRequired(ENUM_ORDER_TYPE orderType, double lot)
 
    double formulaMargin = (price * contractSize * lot) / effectiveLev;
 
-   // If OrderCalcMargin failed or reported an unrealistically low margin (e.g. using 1:1000 on Gold), use formulaMargin
-   if(!ok || reqMargin <= 0.0 || (isGold && reqMargin < (formulaMargin * 0.85)))
+   // Trust the broker's own figure first: OrderCalcMargin reflects live server
+   // rules (FBS gold here is ~1:500, not 1:100). The formula is a fallback for
+   // when the calc fails, never an override of a sane server value.
+   if(!ok || reqMargin <= 0.0)
    {
       reqMargin = formulaMargin;
    }
@@ -1119,6 +1121,13 @@ void ProcessBarcodeEngine()
    // If free margin cannot afford another stripe right now, wait for floating profit to expand margin!
    if(freeMargin < (reqMargin + safetyBuffer))
    {
+      static datetime lastWaitPrint = 0;
+      if(TimeCurrent() - lastWaitPrint >= 5)
+      {
+         PrintFormat("⏳ [BARCODE WAITING]: need $%.2f margin, have $%.2f free. Waiting for margin expansion (%d/%d filled).",
+                     reqMargin + safetyBuffer, freeMargin, currentProgress, g_barcodeTarget);
+         lastWaitPrint = TimeCurrent();
+      }
       return;
    }
 
@@ -1915,7 +1924,7 @@ string MCPFireBarcode(ENUM_ORDER_TYPE type, string &parts[], int count, bool &ok
    ExecuteBarcode(type);
    ok = true;
    if(sl > 0.0)
-      return StringFormat("fired %d stripes x %.2f SL=%.2f TP=%.2f risk~$%.2f",
+      return StringFormat("engine started %d stripes x %.2f SL=%.2f TP=%.2f risk~$%.2f (fills async, verify positions)",
                           stripes, lot, sl, tp, risk);
-   return StringFormat("fired %d stripes x %.2f NO PROTECTION (EA cap disabled)", stripes, lot);
+   return StringFormat("engine started %d stripes x %.2f NO PROTECTION (EA cap disabled)", stripes, lot);
 }
