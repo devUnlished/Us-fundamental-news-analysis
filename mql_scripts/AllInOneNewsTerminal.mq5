@@ -614,6 +614,13 @@ void UpdateHUDStatus()
       ObjectSetString(0, "LBL_STATUS", OBJPROP_TEXT, info);
       ObjectSetInteger(0, "LBL_STATUS", OBJPROP_COLOR, C'250,204,21'); // Amber yellow
    }
+   else if(g_straddleArmed)
+   {
+      string info = StringFormat("⚡ ARMED: BUY >= %.2f | SELL <= %.2f | TP: ±$%.0f | %dx %.2f", 
+                                 g_straddleBuyTrigger, g_straddleSellTrigger, g_activeTPDist, g_currentStripes, g_currentLot);
+      ObjectSetString(0, "LBL_STATUS", OBJPROP_TEXT, info);
+      ObjectSetInteger(0, "LBL_STATUS", OBJPROP_COLOR, C'250,204,21'); // Amber yellow
+   }
    else
    {
       string info = StringFormat("Stripes: %dx %.2f | Wick: $%.0f (%dp) | Target TP: +$%.0f (%dp)", 
