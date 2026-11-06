@@ -101,7 +101,7 @@ bool     g_mcpArmedRun = false; // One-shot latch: next StartBarcodeEngine keeps
 
 int    GetBarcodePositionsCount(ENUM_POSITION_TYPE targetPosType = WRONG_VALUE);
 double GetMarginRequired(ENUM_ORDER_TYPE orderType, double lot);
-void   ExecuteBarcode(ENUM_ORDER_TYPE orderType, double customLot = 0.0, double customSL = 0.0, double customTP = 0.0);
+void   ExecuteBarcode(ENUM_ORDER_TYPE orderType, double customLot = 0.0, double customSL = 0.0, double customTP = 0.0, int customStripes = 0);
 void   StartBarcodeEngine(ENUM_ORDER_TYPE orderType, int targetStripes, double lot, double customSL = 0.0, double customTP = 0.0);
 void   ProcessBarcodeEngine();
 void   ClearBarcodeGlobals();
@@ -579,7 +579,11 @@ void UpdateHUDStatus()
 {
    string textVal = ObjectGetString(0, "EDT_LOT_SIZE", OBJPROP_TEXT);
    double enteredLot = StringToDouble(textVal);
-   if(enteredLot >= 0.01 && enteredLot <= 50.0) g_currentLot = NormalizeDouble(enteredLot, 2);
+   if(enteredLot >= 0.01 && enteredLot <= 50.0)
+   {
+      g_currentLot = NormalizeDouble(enteredLot, 2);
+      GlobalVariableSet(StringFormat("AION_%s_SEL_LOT", _Symbol), g_currentLot);
+   }
 
    CalibrateNewsTargets();
    CheckAutoBarcodeTimer();
@@ -737,7 +741,15 @@ int OnInit()
    trade.SetDeviationInPoints(InpSlippagePoints);
    trade.SetTypeFilling(GetFillingMode());
    g_currentLot = InpDefaultLot;
-   g_currentStripes = (InpNumberOfStripes > 0) ? InpNumberOfStripes : 10;
+   string selLotVar = StringFormat("AION_%s_SEL_LOT", _Symbol);
+   if(GlobalVariableCheck(selLotVar) && GlobalVariableGet(selLotVar) > 0.0)
+      g_currentLot = GlobalVariableGet(selLotVar);
+
+   string selStripesVar = StringFormat("AION_%s_SEL_STRIPES", _Symbol);
+   if(GlobalVariableCheck(selStripesVar) && GlobalVariableGet(selStripesVar) > 0)
+      g_currentStripes = (int)GlobalVariableGet(selStripesVar);
+   else
+      g_currentStripes = (InpNumberOfStripes > 0) ? InpNumberOfStripes : 10;
    g_activeTPDist = InpFallbackTPDist;
 
    RemoveChartTextClutter();
@@ -756,13 +768,17 @@ int OnInit()
       g_straddleBuyTrigger  = GlobalVariableGet(gvPrefix + "BUY_TRIG");
       g_straddleSellTrigger = GlobalVariableGet(gvPrefix + "SELL_TRIG");
       g_straddleArmTime     = (datetime)GlobalVariableGet(gvPrefix + "ARM_TIME");
+      if(GlobalVariableCheck(gvPrefix + "STRIPES") && GlobalVariableGet(gvPrefix + "STRIPES") > 0)
+         g_currentStripes   = (int)GlobalVariableGet(gvPrefix + "STRIPES");
+      if(GlobalVariableCheck(gvPrefix + "LOT") && GlobalVariableGet(gvPrefix + "LOT") > 0.0)
+         g_currentLot       = GlobalVariableGet(gvPrefix + "LOT");
       double buyTP          = GlobalVariableGet(gvPrefix + "BUY_TP");
       double sellTP         = GlobalVariableGet(gvPrefix + "SELL_TP");
 
       DrawStraddleLines(g_straddleBuyTrigger, buyTP, g_straddleSellTrigger, sellTP);
       UpdateHUDStatus();
-      PrintFormat("🔄 [TIMEFRAME SWITCH]: Retained active Breakout Stops on %s! Buy: %.2f | Sell: %.2f",
-                  _Symbol, g_straddleBuyTrigger, g_straddleSellTrigger);
+      PrintFormat("🔄 [TIMEFRAME SWITCH]: Retained active Breakout Stops on %s! Buy: %.2f | Sell: %.2f | %dx %.2f lots",
+                  _Symbol, g_straddleBuyTrigger, g_straddleSellTrigger, g_currentStripes, g_currentLot);
    }
 
    // Restore active barcode engine across timeframe switches!
@@ -870,16 +886,16 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
          ObjectSetString(0, "EDT_LOT_SIZE", OBJPROP_TEXT, DoubleToString(g_currentLot, 2));
          ObjectSetInteger(0, "BTN_LOT_MINUS", OBJPROP_STATE, false);
       }
-      else if(sparam == "BTN_LOT_001") { g_currentLot = 0.01; ObjectSetString(0, "EDT_LOT_SIZE", OBJPROP_TEXT, "0.01"); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
-      else if(sparam == "BTN_LOT_005") { g_currentLot = 0.05; ObjectSetString(0, "EDT_LOT_SIZE", OBJPROP_TEXT, "0.05"); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
-      else if(sparam == "BTN_LOT_010") { g_currentLot = 0.10; ObjectSetString(0, "EDT_LOT_SIZE", OBJPROP_TEXT, "0.10"); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
-      else if(sparam == "BTN_LOT_020") { g_currentLot = 0.20; ObjectSetString(0, "EDT_LOT_SIZE", OBJPROP_TEXT, "0.20"); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
-      else if(sparam == "BTN_STRIPES_10")  { g_currentStripes = 10;  ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
-      else if(sparam == "BTN_STRIPES_20")  { g_currentStripes = 20;  ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
-      else if(sparam == "BTN_STRIPES_30")  { g_currentStripes = 30;  ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
-      else if(sparam == "BTN_STRIPES_40")  { g_currentStripes = 40;  ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
-      else if(sparam == "BTN_STRIPES_50")  { g_currentStripes = 50;  ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
-      else if(sparam == "BTN_STRIPES_100") { g_currentStripes = 100; ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
+      else if(sparam == "BTN_LOT_001") { g_currentLot = 0.01; GlobalVariableSet(StringFormat("AION_%s_SEL_LOT", _Symbol), 0.01); ObjectSetString(0, "EDT_LOT_SIZE", OBJPROP_TEXT, "0.01"); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
+      else if(sparam == "BTN_LOT_005") { g_currentLot = 0.05; GlobalVariableSet(StringFormat("AION_%s_SEL_LOT", _Symbol), 0.05); ObjectSetString(0, "EDT_LOT_SIZE", OBJPROP_TEXT, "0.05"); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
+      else if(sparam == "BTN_LOT_010") { g_currentLot = 0.10; GlobalVariableSet(StringFormat("AION_%s_SEL_LOT", _Symbol), 0.10); ObjectSetString(0, "EDT_LOT_SIZE", OBJPROP_TEXT, "0.10"); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
+      else if(sparam == "BTN_LOT_020") { g_currentLot = 0.20; GlobalVariableSet(StringFormat("AION_%s_SEL_LOT", _Symbol), 0.20); ObjectSetString(0, "EDT_LOT_SIZE", OBJPROP_TEXT, "0.20"); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
+      else if(sparam == "BTN_STRIPES_10")  { g_currentStripes = 10;  GlobalVariableSet(StringFormat("AION_%s_SEL_STRIPES", _Symbol), 10); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
+      else if(sparam == "BTN_STRIPES_20")  { g_currentStripes = 20;  GlobalVariableSet(StringFormat("AION_%s_SEL_STRIPES", _Symbol), 20); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
+      else if(sparam == "BTN_STRIPES_30")  { g_currentStripes = 30;  GlobalVariableSet(StringFormat("AION_%s_SEL_STRIPES", _Symbol), 30); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
+      else if(sparam == "BTN_STRIPES_40")  { g_currentStripes = 40;  GlobalVariableSet(StringFormat("AION_%s_SEL_STRIPES", _Symbol), 40); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
+      else if(sparam == "BTN_STRIPES_50")  { g_currentStripes = 50;  GlobalVariableSet(StringFormat("AION_%s_SEL_STRIPES", _Symbol), 50); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
+      else if(sparam == "BTN_STRIPES_100") { g_currentStripes = 100; GlobalVariableSet(StringFormat("AION_%s_SEL_STRIPES", _Symbol), 100); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); }
       else if(sparam == "BTN_BUY")
       {
          ExecuteBarcode(ORDER_TYPE_BUY);
@@ -1083,21 +1099,16 @@ void SaveBarcodeGlobals()
 
 void StartBarcodeEngine(ENUM_ORDER_TYPE orderType, int targetStripes, double lot, double customSL = 0.0, double customTP = 0.0)
 {
-   // 1. One-shot MCP protection / custom SL/TP setup
-   if(customSL > 0.0 || customTP > 0.0)
+   // 1. One-shot MCP protection setup (only for external MCP command runs)
+   if(g_mcpArmedRun)
    {
-      g_mcpSL = customSL;
-      g_mcpTP = customTP;
+      // Keep g_mcpSL / g_mcpTP set by MCPFireBarcode
       g_mcpArmedRun = false;
-   }
-   else if(!g_mcpArmedRun)
-   {
-      g_mcpSL = 0.0;
-      g_mcpTP = 0.0;
    }
    else
    {
-      g_mcpArmedRun = false;
+      g_mcpSL = 0.0;
+      g_mcpTP = 0.0;
    }
 
    // 2. Exact requested stripe count (only executes the selected amount!)
@@ -1139,18 +1150,24 @@ void StartBarcodeEngine(ENUM_ORDER_TYPE orderType, int targetStripes, double lot
       double price = (orderType == ORDER_TYPE_SELL) ? bid : ask;
 
       double tp = 0.0;
-      if(effTPDist > 0.0)
-      {
+      if(customTP > 0.0)
+         tp = NormalizeDouble(customTP, digits);
+      else if(effTPDist > 0.0)
          tp = (orderType == ORDER_TYPE_SELL) ? NormalizeDouble(bid - effTPDist, digits) : NormalizeDouble(ask + effTPDist, digits);
-      }
 
       double sl = 0.0;
+      if(customSL > 0.0)
+         sl = NormalizeDouble(customSL, digits);
+      else if(InpStopSLDistance > 0.0)
+         sl = (orderType == ORDER_TYPE_SELL) ? NormalizeDouble(bid + InpStopSLDistance, digits) : NormalizeDouble(ask - InpStopSLDistance, digits);
+
+      // External MCP safety validation (only for external MCP agent commands)
       if(g_mcpSL > 0.0 || g_mcpTP > 0.0)
       {
          string mcpWhy = "";
          if(!MCPProtectionValid(bid, ask, g_mcpSL, g_mcpTP, orderType, mcpWhy))
          {
-            PrintFormat("🛑 [BARCODE ABORTED]: Protection invalid (%s). Aborting burst.", mcpWhy);
+            PrintFormat("🛑 [MCP ABORTED]: External protection invalid (%s). Aborting burst.", mcpWhy);
             break;
          }
          if(g_mcpSL > 0.0) sl = NormalizeDouble(g_mcpSL, digits);
@@ -1237,10 +1254,10 @@ void ProcessBarcodeEngine()
    }
 }
 
-void ExecuteBarcode(ENUM_ORDER_TYPE orderType, double customLot = 0.0, double customSL = 0.0, double customTP = 0.0)
+void ExecuteBarcode(ENUM_ORDER_TYPE orderType, double customLot = 0.0, double customSL = 0.0, double customTP = 0.0, int customStripes = 0)
 {
    double lot = (customLot > 0.0) ? customLot : g_currentLot;
-   int stripes = (g_currentStripes > 0) ? g_currentStripes : InpNumberOfStripes;
+   int stripes = (customStripes > 0) ? customStripes : ((g_currentStripes > 0) ? g_currentStripes : InpNumberOfStripes);
    StartBarcodeEngine(orderType, stripes, lot, customSL, customTP);
 }
 
@@ -1447,6 +1464,8 @@ void ArmStraddleWatch()
    GlobalVariableSet(gvPrefix + "BUY_TP", buyTP);
    GlobalVariableSet(gvPrefix + "SELL_TP", sellTP);
    GlobalVariableSet(gvPrefix + "ARM_TIME", (double)g_straddleArmTime);
+   GlobalVariableSet(gvPrefix + "STRIPES", (double)g_currentStripes);
+   GlobalVariableSet(gvPrefix + "LOT", g_currentLot);
 
    DrawStraddleLines(g_straddleBuyTrigger, buyTP, g_straddleSellTrigger, sellTP);
    UpdateHUDStatus();
@@ -1551,6 +1570,8 @@ void DisarmStraddleWatch()
    GlobalVariableDel(gvPrefix + "BUY_TP");
    GlobalVariableDel(gvPrefix + "SELL_TP");
    GlobalVariableDel(gvPrefix + "ARM_TIME");
+   GlobalVariableDel(gvPrefix + "STRIPES");
+   GlobalVariableDel(gvPrefix + "LOT");
 
    if(!g_straddleArmed && ObjectFind(0, "LINE_STRADDLE_BUY") < 0 && ObjectFind(0, "LINE_STRADDLE_SELL") < 0) return;
    
@@ -1646,9 +1667,12 @@ void CheckStraddleBreakout()
       else if(tpDist > 0.0)
          tp = NormalizeDouble(ask + tpDist, digits);
 
+      int stripesToFire = (g_currentStripes > 0) ? g_currentStripes : InpNumberOfStripes;
+      double lotToFire = (g_currentLot > 0.0) ? g_currentLot : InpDefaultLot;
+
       PrintFormat("🚀🚀 [BREAKOUT BUY TRIGGERED]: Ask %.2f crossed trigger %.2f (+$%.2f / %.1fp)! Firing %d barcode stripes at %.2f lots (SL: %.2f | TP: %.2f)...",
-                  ask, triggerLvl, InpStopDistance, InpStopDistance * 10.0, g_currentStripes, g_currentLot, sl, tp);
-      ExecuteBarcode(ORDER_TYPE_BUY, 0.0, sl, tp);
+                  ask, triggerLvl, InpStopDistance, InpStopDistance * 10.0, stripesToFire, lotToFire, sl, tp);
+      ExecuteBarcode(ORDER_TYPE_BUY, lotToFire, sl, tp, stripesToFire);
       return;
    }
 
@@ -1656,6 +1680,9 @@ void CheckStraddleBreakout()
    if(bid <= g_straddleSellTrigger && g_straddleSellTrigger > 0.0)
    {
       double triggerLvl = g_straddleSellTrigger;
+      int stripesToFire = (g_currentStripes > 0) ? g_currentStripes : InpNumberOfStripes;
+      double lotToFire = (g_currentLot > 0.0) ? g_currentLot : InpDefaultLot;
+
       DisarmStraddleWatch(); // Immediately disarm to prevent duplicate firing
 
       double sl = 0.0;
@@ -1669,8 +1696,8 @@ void CheckStraddleBreakout()
          tp = NormalizeDouble(bid - tpDist, digits);
 
       PrintFormat("🚀🚀 [BREAKOUT SELL TRIGGERED]: Bid %.2f crossed trigger %.2f (-$%.2f / %.1fp)! Firing %d barcode stripes at %.2f lots (SL: %.2f | TP: %.2f)...",
-                  bid, triggerLvl, InpStopDistance, InpStopDistance * 10.0, g_currentStripes, g_currentLot, sl, tp);
-      ExecuteBarcode(ORDER_TYPE_SELL, 0.0, sl, tp);
+                  bid, triggerLvl, InpStopDistance, InpStopDistance * 10.0, stripesToFire, lotToFire, sl, tp);
+      ExecuteBarcode(ORDER_TYPE_SELL, lotToFire, sl, tp, stripesToFire);
       return;
    }
 }
