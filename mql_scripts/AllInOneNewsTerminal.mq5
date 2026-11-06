@@ -1083,8 +1083,7 @@ void SaveBarcodeGlobals()
 
 void StartBarcodeEngine(ENUM_ORDER_TYPE orderType, int targetStripes, double lot, double customSL = 0.0, double customTP = 0.0)
 {
-   // One-shot MCP protection: an MCP fire command sets the latch + SL/TP just
-   // before calling in. Any other (manual/hotkey/straddle) start clears stale values.
+   // 1. One-shot MCP protection / custom SL/TP setup
    if(customSL > 0.0 || customTP > 0.0)
    {
       g_mcpSL = customSL;
@@ -1100,196 +1099,65 @@ void StartBarcodeEngine(ENUM_ORDER_TYPE orderType, int targetStripes, double lot
    {
       g_mcpArmedRun = false;
    }
-   g_barcodeActive = true;
-   g_barcodeType   = orderType;
-   g_barcodeTarget = (targetStripes > 0) ? targetStripes : 10;
-   g_barcodeFilled = 0;
-   g_barcodeMaxLiveSeen = 0;
-   
-   ENUM_POSITION_TYPE targetPosType = (orderType == ORDER_TYPE_BUY) ? POSITION_TYPE_BUY : POSITION_TYPE_SELL;
-   g_barcodeBaseOpenCount = GetBarcodePositionsCount(targetPosType);
-   
-   g_barcodeStartTime = TimeCurrent();
-   g_barcodeLastFireTime = 0;
 
-   // Determine stripe lot: if selected lot is unaffordable even for 1 stripe, dynamically scale to what free margin allows
-   double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
-   double req = GetMarginRequired(orderType, lot);
-   double buffer = 2.50;
+   // 2. Exact requested stripe count (only executes the selected amount!)
+   int countToFire = (targetStripes > 0) ? targetStripes : ((g_currentStripes > 0) ? g_currentStripes : InpNumberOfStripes);
+   if(countToFire <= 0) countToFire = 10;
 
-   if(freeMargin < (req + buffer))
-   {
-      double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
-      if(minLot <= 0.0) minLot = 0.01;
-      double minReq = GetMarginRequired(orderType, minLot);
-
-      if(freeMargin >= (minReq + buffer))
-      {
-         double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
-         if(lotStep <= 0.0) lotStep = 0.01;
-         double affordable = MathFloor(((freeMargin - buffer) * (minLot / minReq)) / lotStep) * lotStep;
-         affordable = NormalizeDouble(affordable, 2);
-         if(affordable < minLot) affordable = minLot;
-         if(affordable > lot) affordable = lot;
-         g_barcodeStripeLot = NormalizeDouble(affordable, 2);
-         PrintFormat("⚠️ [MARGIN ADAPTATION]: Free Margin $%.2f cannot afford %.2f lot. Scaled stripe lot to %.2f.",
-                     freeMargin, lot, g_barcodeStripeLot);
-      }
-      else
-      {
-         g_barcodeStripeLot = (lot > 0.0) ? NormalizeDouble(lot, 2) : 0.01;
-      }
-   }
-   else
-   {
-      g_barcodeStripeLot = (lot > 0.0) ? NormalizeDouble(lot, 2) : 0.01;
-   }
+   // 3. Lot sizing & normalization
+   double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   if(minLot <= 0.0) minLot = 0.01;
+   double maxLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+   if(maxLot <= 0.0) maxLot = 50.0;
+   double stripeLot = (lot > 0.0) ? lot : g_currentLot;
+   if(stripeLot < minLot) stripeLot = minLot;
+   if(stripeLot > maxLot) stripeLot = maxLot;
+   stripeLot = NormalizeDouble(stripeLot, 2);
 
    trade.SetTypeFilling(GetFillingMode());
    trade.SetExpertMagicNumber(999111);
    trade.SetDeviationInPoints(InpSlippagePoints);
-
-   double effTP = (InpStopTPDistance > 0.0) ? InpStopTPDistance : g_activeTPDist;
-   string dir = (orderType == ORDER_TYPE_BUY) ? "BUY" : "SELL";
-   PrintFormat("🚀 [BARCODE ENGINE STARTED]: %s %d stripes at %.2f lots | TP: +$%.0f on %s (Existing open: %d | Free Margin: $%.2f)",
-               dir, g_barcodeTarget, g_barcodeStripeLot, effTP, _Symbol, g_barcodeBaseOpenCount, freeMargin);
-
-   SaveBarcodeGlobals();
-   ProcessBarcodeEngine(); // Fire available initial stripes immediately
-}
-
-void ProcessBarcodeEngine()
-{
-   if(!g_barcodeActive || g_barcodeType == WRONG_VALUE) return;
-
-   ENUM_POSITION_TYPE targetPosType = (g_barcodeType == ORDER_TYPE_BUY) ? POSITION_TYPE_BUY : POSITION_TYPE_SELL;
-   int liveStripes = GetBarcodePositionsCount(targetPosType);
-   int newlyOpened = liveStripes - g_barcodeBaseOpenCount;
-   if(newlyOpened < 0) newlyOpened = 0;
-
-   if(newlyOpened > g_barcodeMaxLiveSeen)
-   {
-      g_barcodeMaxLiveSeen = newlyOpened;
-   }
-
-   // Reconcile async orders after 1.5 seconds if some were rejected by broker
-   if(TimeCurrent() - g_barcodeLastFireTime > 1 && g_barcodeFilled > newlyOpened)
-   {
-      g_barcodeFilled = newlyOpened;
-   }
-
-   int currentProgress = MathMax(g_barcodeFilled, newlyOpened);
-
-   // Check if the user's stripe target has been completely achieved
-   if(newlyOpened >= g_barcodeTarget)
-   {
-      PrintFormat("🎉 [BARCODE FULLY FILLED]: All %d/%d stripes active on %s! Engine complete.", 
-                  newlyOpened, g_barcodeTarget, _Symbol);
-      g_barcodeActive = false;
-      ClearBarcodeGlobals();
-      g_barcodeMaxLiveSeen = 0;
-      g_mcpSL = 0.0; g_mcpTP = 0.0;
-      UpdateHUDStatus();
-      return;
-   }
-
-   // If stripes were opened and now all stripes closed (e.g. hit TP or closed by trader), finish engine.
-   // Safety: must have actually had confirmed live stripes (g_barcodeMaxLiveSeen > 0)
-   // AND at least 3 seconds must have passed since firing so in-flight orders are done.
-   if(g_barcodeMaxLiveSeen > 0 && liveStripes == 0 && (TimeCurrent() - g_barcodeLastFireTime >= 3))
-   {
-      PrintFormat("🏁 [BARCODE FINISHED]: Open stripes closed/TP reached on %s (peak: %d positions). Disarming engine.", 
-                  _Symbol, g_barcodeMaxLiveSeen);
-      g_barcodeActive = false;
-      ClearBarcodeGlobals();
-      g_barcodeMaxLiveSeen = 0;
-      g_mcpSL = 0.0; g_mcpTP = 0.0;
-      UpdateHUDStatus();
-      return;
-   }
-
-   // Active window timeout: 15 minutes for the news breakout momentum to play out
-   if(TimeCurrent() - g_barcodeStartTime > 900)
-   {
-      PrintFormat("⏱️ [BARCODE TIMEOUT]: Active window (15m) ended. Filled %d/%d stripes on %s.", 
-                  newlyOpened, g_barcodeTarget, _Symbol);
-      g_barcodeActive = false;
-      ClearBarcodeGlobals();
-      g_barcodeMaxLiveSeen = 0;
-      g_mcpSL = 0.0; g_mcpTP = 0.0;
-      UpdateHUDStatus();
-      return;
-   }
-
-   double reqMargin = GetMarginRequired(g_barcodeType, g_barcodeStripeLot);
-   double safetyBuffer = 2.50; // $2.50 margin buffer to prevent [No money] rejection
-   double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
-
-   // If free margin cannot afford another stripe right now, wait for floating profit to expand margin!
-   if(freeMargin < (reqMargin + safetyBuffer))
-   {
-      static datetime lastWaitPrint = 0;
-      if(TimeCurrent() - lastWaitPrint >= 5)
-      {
-         PrintFormat("⏳ [BARCODE WAITING]: need $%.2f margin, have $%.2f free. Waiting for margin expansion (%d/%d filled).",
-                     reqMargin + safetyBuffer, freeMargin, newlyOpened, g_barcodeTarget);
-         lastWaitPrint = TimeCurrent();
-      }
-      return;
-   }
-
-   int canAfford = (int)MathFloor((freeMargin - safetyBuffer) / reqMargin);
-   if(canAfford <= 0) return;
-
-   int remaining = g_barcodeTarget - currentProgress;
-   if(remaining <= 0) return;
-
-   int toFireNow = MathMin(canAfford, remaining);
-   if(toFireNow > 30) toFireNow = 30;
-   if(toFireNow <= 0) return;
 
    int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
-   int firedInThisBurst = 0;
+   double effTPDist = (InpStopTPDistance > 0.0) ? InpStopTPDistance : g_activeTPDist;
 
-   trade.SetTypeFilling(GetFillingMode());
-   trade.SetExpertMagicNumber(999111);
-   trade.SetDeviationInPoints(InpSlippagePoints);
+   string dir = (orderType == ORDER_TYPE_BUY) ? "BUY" : "SELL";
+   PrintFormat("🚀 [EXECUTION TRIGGERED]: Firing exact %d %s trades at %.2f lots | TP: +$%.0f on %s (Free Margin: $%.2f)",
+               countToFire, dir, stripeLot, effTPDist, _Symbol, AccountInfoDouble(ACCOUNT_MARGIN_FREE));
 
-   for(int i = 0; i < toFireNow; i++)
+   int fired = 0;
+   for(int i = 0; i < countToFire; i++)
    {
       double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
       double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-      double price = (g_barcodeType == ORDER_TYPE_SELL) ? bid : ask;
-
-      double tp = 0.0;
-      double effTPDist = (InpStopTPDistance > 0.0) ? InpStopTPDistance : g_activeTPDist;
-      if(effTPDist > 0.0)
+      if(ask <= 0.0 || bid <= 0.0)
       {
-         tp = (g_barcodeType == ORDER_TYPE_SELL) ? NormalizeDouble(bid - effTPDist, digits) : NormalizeDouble(ask + effTPDist, digits);
+         Print("⚠️ [EXECUTION PAUSED]: Zero quotes received from broker. Halting burst.");
+         break;
       }
 
-      // MCP-protected run: apply command SL/TP, revalidated every burst.
-      // If protection went invalid (price moved through it), abort the run:
-      // an MCP-protected barcode never fires naked.
+      double price = (orderType == ORDER_TYPE_SELL) ? bid : ask;
+
+      double tp = 0.0;
+      if(effTPDist > 0.0)
+      {
+         tp = (orderType == ORDER_TYPE_SELL) ? NormalizeDouble(bid - effTPDist, digits) : NormalizeDouble(ask + effTPDist, digits);
+      }
+
       double sl = 0.0;
       if(g_mcpSL > 0.0 || g_mcpTP > 0.0)
       {
          string mcpWhy = "";
-         if(!MCPProtectionValid(bid, ask, g_mcpSL, g_mcpTP, g_barcodeType, mcpWhy))
+         if(!MCPProtectionValid(bid, ask, g_mcpSL, g_mcpTP, orderType, mcpWhy))
          {
-            PrintFormat("🛑 [BARCODE ABORTED]: MCP protection invalid at fire time (%s). Engine stopped, no naked fill.", mcpWhy);
-            g_barcodeActive = false;
-            ClearBarcodeGlobals();
-            g_barcodeMaxLiveSeen = 0;
-            g_mcpSL = 0.0; g_mcpTP = 0.0;
-            UpdateHUDStatus();
-            return;
+            PrintFormat("🛑 [BARCODE ABORTED]: Protection invalid (%s). Aborting burst.", mcpWhy);
+            break;
          }
          if(g_mcpSL > 0.0) sl = NormalizeDouble(g_mcpSL, digits);
          if(g_mcpTP > 0.0) tp = NormalizeDouble(g_mcpTP, digits);
       }
 
-      string comment = StringFormat("Barcode %d/%d", currentProgress + firedInThisBurst + 1, g_barcodeTarget);
+      string comment = StringFormat("Barcode %d/%d", i + 1, countToFire);
 
       MqlTradeRequest request;
       MqlTradeResult  result;
@@ -1298,8 +1166,8 @@ void ProcessBarcodeEngine()
 
       request.action       = TRADE_ACTION_DEAL;
       request.symbol       = _Symbol;
-      request.volume       = g_barcodeStripeLot;
-      request.type         = g_barcodeType;
+      request.volume       = stripeLot;
+      request.type         = orderType;
       request.price        = price;
       request.sl           = sl;
       request.tp           = tp;
@@ -1312,60 +1180,60 @@ void ProcessBarcodeEngine()
       if(OrderSendAsync(request, result))
       {
          ok = true;
-         firedInThisBurst++;
-         g_barcodeFilled++;
-         g_barcodeLastFireTime = TimeCurrent();
+         fired++;
       }
       else
       {
          // Fallback sync send
-         if(g_barcodeType == ORDER_TYPE_BUY)
-            ok = trade.Buy(g_barcodeStripeLot, _Symbol, ask, sl, tp, comment);
+         if(orderType == ORDER_TYPE_BUY)
+            ok = trade.Buy(stripeLot, _Symbol, ask, sl, tp, comment);
          else
-            ok = trade.Sell(g_barcodeStripeLot, _Symbol, bid, sl, tp, comment);
+            ok = trade.Sell(stripeLot, _Symbol, bid, sl, tp, comment);
 
          if(ok && (trade.ResultRetcode() == TRADE_RETCODE_DONE || trade.ResultRetcode() == TRADE_RETCODE_PLACED))
          {
-            firedInThisBurst++;
-            g_barcodeFilled++;
-            g_barcodeLastFireTime = TimeCurrent();
+            fired++;
          }
          else
          {
             uint ret = trade.ResultRetcode();
-            if(ret == TRADE_RETCODE_NO_MONEY || ret == 10019)
-            {
-               g_learnedMinMargin = MathMax(g_learnedMinMargin, AccountInfoDouble(ACCOUNT_MARGIN_FREE) + 2.0);
-            }
-            PrintFormat("⚠️ [BARCODE RETRY LATER]: Order send paused (code %u: %s). Free Margin: $%.2f",
-                        ret, trade.ResultRetcodeDescription(), AccountInfoDouble(ACCOUNT_MARGIN_FREE));
-            break;
+            PrintFormat("⚠️ [MARGIN LIMIT REACHED]: Order %d/%d stopped by broker (code %u: %s). Free Margin: $%.2f",
+                        i + 1, countToFire, ret, trade.ResultRetcodeDescription(), AccountInfoDouble(ACCOUNT_MARGIN_FREE));
+            break; // Stop immediately upon broker rejection
          }
       }
    }
 
-   if(firedInThisBurst > 0)
-   {
-      double effTPDist = (InpStopTPDistance > 0.0) ? InpStopTPDistance : g_activeTPDist;
-      int currentOpen = GetBarcodePositionsCount(targetPosType);
-      PrintFormat("⚡ [BARCODE BURST]: Fired %d stripes! Current Open: %d/%d (Free Margin: $%.2f | TP: +$%.0f)",
-                  firedInThisBurst, currentOpen, g_barcodeTarget, AccountInfoDouble(ACCOUNT_MARGIN_FREE), effTPDist);
-      UpdateHUDStatus();
+   // Single atomic burst complete — DISARM IMMEDIATELY!
+   // Do NOT keep adding trades later just because there is free margin!
+   g_barcodeActive = false;
+   ClearBarcodeGlobals();
+   g_barcodeTarget = 0;
+   g_barcodeFilled = 0;
+   g_barcodeMaxLiveSeen = 0;
+   g_mcpSL = 0.0;
+   g_mcpTP = 0.0;
 
-      if(currentOpen - g_barcodeBaseOpenCount >= g_barcodeTarget)
-      {
-         PrintFormat("🎉 [BARCODE FULLY FILLED]: All %d/%d stripes successfully filled on %s!", 
-                     g_barcodeTarget, g_barcodeTarget, _Symbol);
-         g_barcodeActive = false;
-         ClearBarcodeGlobals();
-         g_barcodeMaxLiveSeen = 0;
-         g_mcpSL = 0.0; g_mcpTP = 0.0;
-         UpdateHUDStatus();
-      }
-      else
-      {
-         SaveBarcodeGlobals();
-      }
+   PrintFormat("🎯 [EXECUTION COMPLETE]: Dispatched %d/%d trades at %.2f lots on %s (TP: +$%.0f). Engine disarmed — no additional trades will be added.",
+               fired, countToFire, stripeLot, _Symbol, effTPDist);
+
+   UpdateHUDStatus();
+   ChartRedraw(0);
+}
+
+void ProcessBarcodeEngine()
+{
+   // Single-burst execution architecture:
+   // Trades are executed strictly once upon trigger. The engine never lingers in the background
+   // or adds extra trades as margin fluctuates.
+   if(g_barcodeActive)
+   {
+      g_barcodeActive = false;
+      ClearBarcodeGlobals();
+      g_barcodeMaxLiveSeen = 0;
+      g_mcpSL = 0.0;
+      g_mcpTP = 0.0;
+      UpdateHUDStatus();
    }
 }
 
