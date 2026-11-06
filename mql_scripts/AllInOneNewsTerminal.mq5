@@ -1758,6 +1758,7 @@ void CheckStraddleBreakout()
 
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   if(ask <= 0.0 || bid <= 0.0) return; // Guard against broker disconnect/zero-quote glitch
    int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
    double tpDist = (InpStopTPDistance > 0.0) ? InpStopTPDistance : g_activeTPDist;
 
